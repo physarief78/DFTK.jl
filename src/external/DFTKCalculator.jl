@@ -124,7 +124,7 @@ function compute_scf(system::AbstractSystem, calc::DFTKCalculator, oldstate)
     diagtolalg = @something get(calc.params.scf_kwargs, :diagtolalg, nothing) AdaptiveDiagtol()
     if (haskey(oldstate, :basis) && haskey(oldstate, :ρ))
         lattice_agrees = maximum(abs, model.lattice - oldstate.basis.model.lattice) < 1e-6
-        fft_size_agrees = (basis.fft_size..., model.n_spin_components) == size(oldstate.ρ)
+        fft_size_agrees = (basis.fft_size..., n_density_components(model)) == size(oldstate.ρ)
 
         if lattice_agrees && fft_size_agrees
             @debug "compute_scf: Take ρ and ψ from oldstate"

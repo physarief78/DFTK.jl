@@ -28,6 +28,18 @@ struct TermAtomicNonlocal <: TermLinear
     ops::Vector{NonlocalOperator}
 end
 
+function _nonlocal_band_energies(op, ψk::AbstractMatrix)
+    Pψk = op.P' * ψk
+    dropdims(sum(real.(conj.(Pψk) .* (op.D * Pψk)), dims=1), dims=1)
+end
+function _nonlocal_band_energies(op, ψk)
+    sum(each_component(ψk)) do component
+        # Component views are strided for C>1, while this projector application is a GEMM.
+        Pψk = op.P' * copy(component)
+        dropdims(sum(real.(conj.(Pψk) .* (op.D * Pψk)), dims=1), dims=1)
+    end
+end
+
 @timing "ene_ops: nonlocal" function ene_ops(term::TermAtomicNonlocal,
                                              basis::PlaneWaveBasis{T},
                                              ψ, occupation; kwargs...) where {T}
@@ -37,8 +49,7 @@ end
 
     E = zero(T)
     for (ik, ψk) in enumerate(ψ)
-        Pψk = term.ops[ik].P' * ψk  # nproj x nband
-        band_enes = dropdims(sum(real.(conj.(Pψk) .* (term.ops[ik].D * Pψk)), dims=1), dims=1)
+        band_enes = _nonlocal_band_energies(term.ops[ik], ψk)
         E += basis.kweights[ik] * sum(band_enes .* occupation[ik])
     end
     E = mpi_sum(E, basis.comm_kpts)
@@ -49,6 +60,8 @@ end
 @timing "forces: nonlocal" function compute_forces(::TermAtomicNonlocal,
                                                    basis::PlaneWaveBasis{TT}, ψ, occupation;
                                                    kwargs...) where {TT}
+    n_components(basis.model) == 1 || error(
+        "Forces are not yet implemented for full spin polarization.")
     T = promote_type(TT, real(eltype(ψ[1])))
     model = basis.model
     unit_cell_volume = model.unit_cell_volume

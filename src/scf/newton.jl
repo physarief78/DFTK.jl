@@ -81,6 +81,8 @@ function newton(basis::PlaneWaveBasis{T}, ψ0;
                 callback=ScfDefaultCallback(),
                 is_converged=ScfConvergenceDensity(tol),
                 seed=nothing) where {T}
+    n_components(basis.model) == 1 || error(
+        "Newton SCF is not yet implemented for full spin polarization.")
     if any(needs_τ, basis.terms)
         error("meta-GGA functionals not yet supported in newton.")
     end

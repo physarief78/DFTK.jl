@@ -73,6 +73,96 @@ struct RealSpaceMultiplication{T <: Real, AT <: AbstractArray} <: RealFourierOpe
     kpoint::Kpoint{T}
     potential::AT
 end
+
+"""
+Pointwise multiplication by a Hermitian matrix-valued potential. The last dimension of
+`potential` stores generalized Pauli fields, so it has `C²` entries for `C` wavefunction
+components.
+"""
+struct MatrixLocalOperator{T <: Real,AT <: AbstractArray,C} <: RealFourierOperator
+    basis::PlaneWaveBasis{T}
+    kpoint::Kpoint{T}
+    potential::AT
+    component_count::Val{C}
+end
+function MatrixLocalOperator(basis::PlaneWaveBasis{T}, kpoint::Kpoint,
+                             potential::AbstractArray) where {T}
+    C = n_components(basis.model)
+    size(potential) == (basis.fft_size..., C^2) || throw(DimensionMismatch(
+        "A $C-component matrix potential needs $(C^2) fields on the FFT grid."))
+    MatrixLocalOperator{T,typeof(potential),C}(basis, kpoint, potential, Val(C))
+end
+
+@views function apply_matrix_local!(Hψ_reals::NTuple{2}, potential,
+                                    ψ_reals::NTuple{2}; scaling=1)
+    Hψ1, Hψ2 = Hψ_reals
+    ψ1, ψ2 = ψ_reals
+    v0 = potential[:, :, :, 1]
+    vx = potential[:, :, :, 2]
+    vy = potential[:, :, :, 3]
+    vz = potential[:, :, :, 4]
+    Hψ1 .+= scaling .* ((v0 .+ vz) .* ψ1 .+ (vx .- im .* vy) .* ψ2)
+    Hψ2 .+= scaling .* ((vx .+ im .* vy) .* ψ1 .+ (v0 .- vz) .* ψ2)
+    Hψ_reals
+end
+
+@views function apply_matrix_local!(Hψ_reals::NTuple{C}, potential,
+                                    ψ_reals::NTuple{C}; scaling=1) where {C}
+    pauli = generalized_pauli_matrices(Val(C), real(eltype(potential)))
+    for σ = 1:C, τ = 1:C
+        matrix_element = sum(1:C^2) do i
+            pauli[i][σ, τ] .* potential[:, :, :, i]
+        end
+        Hψ_reals[σ] .+= scaling .* matrix_element .* ψ_reals[τ]
+    end
+    Hψ_reals
+end
+
+function apply!(Hψ, op::MatrixLocalOperator, ψ)
+    apply_matrix_local!(Hψ.real, op.potential, ψ.real)
+end
+
+function Base.Matrix(op::MatrixLocalOperator{T,AT,C}) where {T,AT,C}
+    pauli = generalized_pauli_matrices(Val(C), T)
+    n_G = length(G_vectors(op.basis, op.kpoint))
+    matrix = zeros(Complex{T}, C * n_G, C * n_G)
+    for i = 1:C^2
+        scalar_op = RealSpaceMultiplication(op.basis, op.kpoint,
+                                            @view(op.potential[:, :, :, i]))
+        matrix .+= kron(Matrix(scalar_op), Matrix(pauli[i]))
+    end
+    matrix
+end
+
+function LinearAlgebra.mul!(Hψ::AbstractVector, op::MatrixLocalOperator{T,AT,C},
+                            ψ::AbstractVector) where {T,AT,C}
+    n_G = length(G_vectors(op.basis, op.kpoint))
+    length(ψ) == C * n_G || throw(DimensionMismatch("Orbital size does not match operator."))
+    ψ_components = reshape(ψ, C, n_G)
+    Hψ_components = reshape(Hψ, C, n_G)
+    ψ_reals = ntuple(Val(C)) do _
+        similar(ψ, complex(T), op.basis.fft_size...)
+    end
+    Hψ_reals = ntuple(Val(C)) do _
+        similar(Hψ, complex(T), op.basis.fft_size...)
+    end
+    for σ = 1:C
+        ifft!(ψ_reals[σ], op.basis, op.kpoint, @view(ψ_components[σ, :]))
+        fill!(Hψ_reals[σ], 0)
+    end
+    apply_matrix_local!(Hψ_reals, op.potential, ψ_reals)
+    for σ = 1:C
+        fft!(@view(Hψ_components[σ, :]), op.basis, op.kpoint, Hψ_reals[σ])
+    end
+    Hψ
+end
+function LinearAlgebra.mul!(Hψ::AbstractMatrix, op::MatrixLocalOperator,
+                            ψ::AbstractMatrix)
+    @views for n = 1:size(ψ, 2)
+        mul!(Hψ[:, n], op, ψ[:, n])
+    end
+    Hψ
+end
 function apply!(Hψ, op::RealSpaceMultiplication, ψ)
     Hψ.real .+= op.potential .* ψ.real
 end
@@ -230,10 +320,19 @@ end
 function optimize_operators(ops)
     ops = [op for op in ops if !(op isa NoopOperator)]
     RSmults = [op for op in ops if op isa RealSpaceMultiplication]
-    isempty(RSmults) && return ops
-    nonRSmults = [op for op in ops if !(op isa RealSpaceMultiplication)]
-    combined_RSmults = RealSpaceMultiplication(RSmults[1].basis,
-                                               RSmults[1].kpoint,
-                                               sum([op.potential for op in RSmults]))
-    [nonRSmults..., combined_RSmults]
+    matrix_mults = [op for op in ops if op isa MatrixLocalOperator]
+    others = RealFourierOperator[op for op in ops
+                                 if !(op isa RealSpaceMultiplication) &&
+                                    !(op isa MatrixLocalOperator)]
+    if !isempty(RSmults)
+        push!(others, RealSpaceMultiplication(RSmults[1].basis,
+                                              RSmults[1].kpoint,
+                                              sum(op.potential for op in RSmults)))
+    end
+    if !isempty(matrix_mults)
+        push!(others, MatrixLocalOperator(matrix_mults[1].basis,
+                                          matrix_mults[1].kpoint,
+                                          sum(op.potential for op in matrix_mults)))
+    end
+    others
 end

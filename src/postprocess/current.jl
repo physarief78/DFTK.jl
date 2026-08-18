@@ -3,6 +3,8 @@
 Computes the *probability* (not charge) current, ``∑_n f_n \Im(ψ_n · ∇ψ_n)``.
 """
 function compute_current(basis::PlaneWaveBasis, ψ, occupation)
+    n_components(basis.model) == 1 || error(
+        "Current-density postprocessing is not yet implemented for full spin polarization.")
     @assert length(basis.symmetries) == 1  # TODO lift this
     current = [zeros(eltype(basis), basis.fft_size) for α = 1:3]
     for (ik, kpt) in enumerate(basis.kpoints)

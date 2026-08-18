@@ -114,6 +114,8 @@ that is return δψ where (Ω+K) δψ = -δHextψ.
 """
 @timing function solve_ΩplusK(basis::PlaneWaveBasis{T}, ψ, δHextψ, occupation;
                               callback=ResponseCallback(), tol=1e-10) where {T}
+    n_components(basis.model) == 1 || error(
+        "DFPT is not yet implemented for full spin polarization.")
     # for now, all orbitals have to be fully occupied -> need to strip them beforehand
     check_full_occupation(basis, occupation)
 
@@ -277,6 +279,8 @@ Input parameters:
                                     maxiter=100, krylovdim=20, s=100,
                                     callback=verbose ? OmegaPlusKDefaultCallback() : identity,
                                     kwargs...) where {T}
+    n_components(ham.basis.model) == 1 || error(
+        "DFPT is not yet implemented for full spin polarization.")
     # TODO: mixing=LdosMixing() would be a better default in theory, but it is not yet clear
     #       how accurate and efficient it is, so we don't disable it by default for now.
     if !(mixing isa SimpleMixing || mixing isa KerkerMixing || mixing isa KerkerDosMixing)

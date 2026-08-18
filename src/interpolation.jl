@@ -10,7 +10,8 @@ function interpolate_density(ρ_in::AbstractArray{T, 4},
                              basis_in::PlaneWaveBasis,
                              basis_out::PlaneWaveBasis) where {T}
     if basis_in.model.lattice == basis_out.model.lattice
-        @assert size(ρ_in) == (basis_in.fft_size..., basis_in.model.n_spin_components)
+        @assert size(ρ_in) == (basis_in.fft_size...,
+                               n_density_components(basis_in.model))
         interpolate_density(ρ_in, basis_out.fft_size)
     else
         interpolate_density(ρ_in, basis_in.fft_size, basis_out.fft_size,
@@ -112,4 +113,26 @@ function interpolate_kpoint(data_in::AbstractVecOrMat,
     tmp[kpoint_in.mapping, :] .= data_in
     data_out .= @view tmp[kpoint_out.mapping, :]
     ortho_qr(data_out)  # Re-orthogonalize and renormalize
+end
+
+
+function interpolate_kpoint(data_in::AbstractMatrix,
+                            basis_in::PlaneWaveBasis,  kpoint_in::Kpoint,
+                            basis_out::PlaneWaveBasis, kpoint_out::Kpoint,
+                            ::Val{C}) where {C}
+    C == 1 && return interpolate_kpoint(data_in, basis_in, kpoint_in,
+                                       basis_out, kpoint_out)
+    n_Gk_in = length(G_vectors(basis_in, kpoint_in))
+    @assert size(data_in, 1) == C * n_Gk_in
+    n_bands = size(data_in, 2)
+    data_components = reshape(data_in, C, n_Gk_in, n_bands)
+
+    max_nG = max(length(G_vectors(basis_in)), length(G_vectors(basis_out)))
+    tmp = similar(data_in, C, max_nG, n_bands)
+    fill!(tmp, 0)
+    tmp[:, kpoint_in.mapping, :] .= data_components
+
+    n_Gk_out = length(G_vectors(basis_out, kpoint_out))
+    data_out = copy(@view tmp[:, kpoint_out.mapping, :])
+    ortho_qr(reshape(data_out, C * n_Gk_out, n_bands))
 end

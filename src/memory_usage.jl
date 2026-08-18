@@ -50,11 +50,11 @@ function estimate_memory_usage(basis::PlaneWaveBasis{T}, model=basis.model) wher
     n_Gk = length(basis.kpoints[1].G_vectors)
     n_bands = AdaptiveBands(model).n_bands_compute
 
-    ψk_bytes = sizeof(Complex{T}) * n_Gk * n_bands
+    ψk_bytes = sizeof(Complex{T}) * n_components(model) * n_Gk * n_bands
     ψ_bytes = ψk_bytes * n_kpoints
 
     n_fftpoints = prod(basis.fft_size)
-    ρ_bytes = sizeof(T) * n_fftpoints * model.n_spin_components
+    ρ_bytes = sizeof(T) * n_fftpoints * n_density_components(model)
 
     if any(term_type -> term_type isa AtomicNonlocal, model.term_types)
         n_nonlocal_projectors = sum(model.atoms) do atom

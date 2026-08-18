@@ -25,8 +25,10 @@ PAGES = [
     "Basic DFT calculations" => [
         # Ground-state DFT calculations, standard problems and modelling techniques
         # Some basic show cases; may feature integration of DFTK with other packages.
+        "guide/noncollinear_spin.md",
         "examples/metallic_systems.jl",
         "examples/collinear_magnetism.jl",
+        "examples/noncollinear_magnetism.jl",
         "examples/convergence_study.jl",
         "examples/pseudopotentials.jl",
         "examples/supercells.jl",

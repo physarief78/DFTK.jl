@@ -118,6 +118,8 @@ through [`refine_energies`](@ref) and [`refine_forces`](@ref).
                                occ_threshold=default_occupation_threshold(T),
                                kwargs...) where {T}
     basis = scfres.basis
+    n_components(basis.model) == 1 || error(
+        "SCF refinement is not yet implemented for full spin polarization.")
 
     @assert basis.model.lattice == basis_ref.model.lattice
     @assert length(basis.kpoints) == length(basis_ref.kpoints)

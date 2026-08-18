@@ -30,6 +30,10 @@ end
 
 function (xc::Xc)(basis::PlaneWaveBasis{T}) where {T}
     isempty(xc.functionals) && return TermNoop()
+    if basis.model.spin_polarization == :full
+        all(family(fun) == :lda for fun in xc.functionals) || throw(ArgumentError(
+            "Full spin polarization currently supports only LDA exchange-correlation."))
+    end
 
     # Charge density for non-linear core correction
     ρcore = nothing
@@ -80,7 +84,36 @@ struct TermXc{T,CT,TCT} <: TermNonlinear where {T,CT,TCT}
 end
 DftFunctionals.needs_τ(term::TermXc) = any(needs_τ, term.functionals)
 
-function xc_potential_real(term::TermXc, basis::PlaneWaveBasis{T}; ρ, τ=nothing) where {T}
+"""
+    to_locally_collinear(n, magnetization; ε)
+
+Map full-spin fields to locally aligned spin-up/down densities and the local magnetization
+direction. This is the input transformation used by full-spin LDA functionals.
+"""
+function to_locally_collinear(n, magnetization; ε=sqrt(eps(real(eltype(n)))))
+    mx, my, mz = eachslice(magnetization; dims=4)
+    magnitude = sqrt.(mx.^2 .+ my.^2 .+ mz.^2)
+    denominator = max.(magnitude, ε)
+    direction = cat(mx ./ denominator, my ./ denominator, mz ./ denominator; dims=Val(4))
+    densities = cat((n .+ magnitude) ./ 2, (n .- magnitude) ./ 2; dims=Val(4))
+    (; densities, direction)
+end
+
+"""
+    potential_from_locally_collinear(potential, direction)
+
+Map locally aligned spin-up/down potentials back to Pauli fields `(v, bx, by, bz)`.
+"""
+function potential_from_locally_collinear(potential, direction)
+    vplus = @view potential[:, :, :, 1]
+    vminus = @view potential[:, :, :, 2]
+    scalar = (vplus .+ vminus) ./ 2
+    magnetic = (vplus .- vminus) ./ 2 .* direction
+    cat(scalar, magnetic; dims=Val(4))
+end
+
+function _xc_potential_real_collinear(term::TermXc, basis::PlaneWaveBasis{T};
+                                      ρ, τ=nothing, add_core=true) where {T}
     @assert !isempty(term.functionals)
     @assert all(family(xc) in (:lda, :gga, :mgga, :mggal) for xc in term.functionals)
 
@@ -90,10 +123,10 @@ function xc_potential_real(term::TermXc, basis::PlaneWaveBasis{T}; ρ, τ=nothin
     end
 
     # Add the model core charge density (non-linear core correction)
-    if !isnothing(term.ρcore)
+    if add_core && !isnothing(term.ρcore)
         ρ = ρ + term.ρcore
     end
-    if !isnothing(term.τcore)
+    if add_core && !isnothing(term.τcore)
         τ = τ + term.τcore
     end
 
@@ -101,7 +134,7 @@ function xc_potential_real(term::TermXc, basis::PlaneWaveBasis{T}; ρ, τ=nothin
     density = LibxcDensities(basis, max_ρ_derivs, ρ, τ)
     _check_negative_bonding_indicator_α(density)
 
-    n_spin = basis.model.n_spin_components
+    n_spin = size(ρ, 4)
     potential_threshold = term.potential_threshold
 
     # Evaluate terms and energy contribution
@@ -157,12 +190,41 @@ function xc_potential_real(term::TermXc, basis::PlaneWaveBasis{T}; ρ, τ=nothin
     (; E, potential, Vτ)
 end
 
+function _xc_potential_real(::Val{:full}, term::TermXc, basis::PlaneWaveBasis;
+                            ρ, τ=nothing)
+    all(family(xc) == :lda for xc in term.functionals) || throw(ArgumentError(
+        "Full spin polarization currently supports only LDA exchange-correlation."))
+    isnothing(τ) || throw(ArgumentError(
+        "Kinetic-energy-density XC is not supported for full spin polarization."))
+
+    if !isnothing(term.ρcore)
+        ρ = ρ + term.ρcore
+    end
+    n = @view ρ[:, :, :, 1]
+    m = @view ρ[:, :, :, 2:4]
+    locally_collinear = to_locally_collinear(n, m)
+    result = _xc_potential_real_collinear(term, basis; ρ=locally_collinear.densities,
+                                           τ=nothing, add_core=false)
+    potential = potential_from_locally_collinear(result.potential,
+                                                  locally_collinear.direction)
+    (; E=result.E, potential, Vτ=nothing)
+end
+function _xc_potential_real(::Val, term::TermXc, basis::PlaneWaveBasis; ρ, τ=nothing)
+    _xc_potential_real_collinear(term, basis; ρ, τ)
+end
+function xc_potential_real(term::TermXc, basis::PlaneWaveBasis; ρ, τ=nothing)
+    _xc_potential_real(Val(basis.model.spin_polarization), term, basis; ρ, τ)
+end
+
 @views @timing "ene_ops: xc" function ene_ops(term::TermXc, basis::PlaneWaveBasis,
                                               ψ, occupation; ρ, τ=nothing, kwargs...)
     E, Vxc, Vτ = xc_potential_real(term, basis; ρ, τ)
 
     ops = map(basis.kpoints) do kpt
-        if !isnothing(Vτ)
+        if basis.model.spin_polarization == :full
+            @assert isnothing(Vτ)
+            MatrixLocalOperator(basis, kpt, Vxc)
+        elseif !isnothing(Vτ)
             [RealSpaceMultiplication(basis, kpt, Vxc[:, :, :, kpt.spin]),
              DivAgradOperator(basis, kpt, Vτ[:, :, :, kpt.spin])]
         else
@@ -174,6 +236,9 @@ end
 
 @views @timing "energy: xc"  function energy(term::TermXc, basis::PlaneWaveBasis{T},
                                              ψ, occupation; ρ, τ=nothing, kwargs...) where {T}
+    if basis.model.spin_polarization == :full
+        return xc_potential_real(term, basis; ρ, τ).E
+    end
     if isnothing(τ) && needs_τ(term)
         throw(ArgumentError("TermXc needs the kinetic energy density τ. Please pass a `τ` " *
                             "keyword argument to your `energy` call."))
@@ -198,6 +263,8 @@ end
 @timing "forces: xc" function compute_forces(term::TermXc, basis::PlaneWaveBasis{T},
                                              ψ, occupation; ρ, τ=nothing,
                                              kwargs...) where {T}
+    basis.model.spin_polarization == :full && error(
+        "Forces are not yet implemented for full spin polarization.")
     # The only non-zero force contribution is from the nlcc core charge:
     # early return if nlcc is disabled / no elements have model core charges.
     isnothing(term.ρcore) && isnothing(term.τcore) && return nothing
@@ -355,7 +422,7 @@ function LibxcDensities(basis::PlaneWaveBasis{T}, max_derivative::Integer, ρ, �
     model = basis.model
     @assert max_derivative in (0, 1, 2)
 
-    n_spin    = model.n_spin_components
+    n_spin    = size(ρ, 4)
     σ_real    = nothing
     ∇ρ_real   = nothing
     Δρ_real   = nothing
@@ -415,7 +482,7 @@ function _check_negative_bonding_indicator_α(densities::LibxcDensities{T};
         return
     end
 
-    n_spin = densities.basis.model.n_spin_components
+    n_spin = size(densities.ρ_real, 1)
     failure_indicator = @views minimum(1:n_spin) do iσ
         # α = (τ - τ_W) / τ_unif should be positive with τ_W = |∇ρ|² / 8ρ
         # equivalently, check 8ρτ - |∇ρ|² ≥ 0
@@ -444,6 +511,8 @@ function _check_negative_bonding_indicator_α(densities::LibxcDensities{T};
 end
 
 function compute_kernel(term::TermXc, basis::PlaneWaveBasis{T}; ρ, kwargs...) where {T}
+    basis.model.spin_polarization == :full && error(
+        "The XC response kernel is not yet implemented for full spin polarization.")
     n_spin  = basis.model.n_spin_components
     @assert 1 ≤ n_spin ≤ 2
     if !all(family(xc) == :lda for xc in term.functionals)
@@ -480,6 +549,8 @@ end
 function apply_kernel(term::TermXc, basis::PlaneWaveBasis{T}, δρ::AbstractArray{Tδρ};
                       ρ, τ=nothing, δτ=nothing, q=zero(Vec3{T}),
                       kwargs...) where {T, Tδρ<:Union{T,Complex{T}}}
+    basis.model.spin_polarization == :full && error(
+        "XC response is not yet implemented for full spin polarization.")
     isempty(term.functionals) && return (;)
     if needs_τ(term)
         isnothing(τ) && error("TermXc needs the kinetic energy density τ in the kernel.")

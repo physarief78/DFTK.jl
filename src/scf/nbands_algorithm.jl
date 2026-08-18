@@ -70,7 +70,7 @@ function determine_n_bands(bands::AdaptiveBands, occupation::Nothing, eigenvalue
     if isnothing(ψ)
         n_bands_compute = bands.n_bands_compute
     else
-        n_bands_compute = max(bands.n_bands_compute, maximum(ψk -> size(ψk, 2), ψ))
+        n_bands_compute = max(bands.n_bands_compute, maximum(_n_bands, ψ))
     end
     # Boost number of bands to converge temporarily for the next SCF step to have more
     # information around after the next step and to thus make a better decision
@@ -103,7 +103,7 @@ function determine_n_bands(bands::AdaptiveBands, occupation::AbstractVector, eig
     n_bands_compute = max(bands.n_bands_compute, n_bands_compute_ε, n_bands_converge + 3)
 
     if !isnothing(ψ)
-        n_bands_compute = max(n_bands_compute, maximum(ψk -> size(ψk, 2), ψ))
+        n_bands_compute = max(n_bands_compute, maximum(_n_bands, ψ))
     end
     @debug "determine_n_bands" n_bands_converge n_bands_compute n_bands_occ n_bands_compute_ε
     (; n_bands_converge, n_bands_compute)

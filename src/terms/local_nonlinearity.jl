@@ -7,7 +7,11 @@ end
 struct TermLocalNonlinearity{TF} <: TermNonlinear
     f::TF
 end
-(L::LocalNonlinearity)(::AbstractBasis) = TermLocalNonlinearity(L.f)
+function (L::LocalNonlinearity)(basis::AbstractBasis)
+    n_components(basis.model) == 1 || error(
+        "Local nonlinearity is not yet implemented for full spin polarization.")
+    TermLocalNonlinearity(L.f)
+end
 
 function ene_ops(term::TermLocalNonlinearity, basis::PlaneWaveBasis{T}, ψ, occupation;
                  ρ, kwargs...) where {T}

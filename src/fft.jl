@@ -176,6 +176,34 @@ function fft(fft_grid::FFTGrid{T}, f_real::AbstractArray{U}) where {T, U}
     f_fourier
 end
 
+"""Transform all components of band `n` from the orbital sphere to real space."""
+function ifft_components!(ψ_reals::Tuple{A}, basis, kpt, ψk::AbstractMatrix,
+                          n::Integer; normalize=true) where {A}
+    ifft!(only(ψ_reals), basis, kpt, @view(ψk[:, n]); normalize)
+    ψ_reals
+end
+
+function ifft_components!(ψ_reals::NTuple{C}, basis, kpt, ψk, n::Integer;
+                          normalize=true) where {C}
+    ψ_components = as_components(ψk)
+    @assert size(ψ_components, 1) == C
+    for σ = 1:C
+        ifft!(ψ_reals[σ], basis, kpt, @view(ψ_components[σ, :, n]); normalize)
+    end
+    ψ_reals
+end
+
+"""Transform all real-space components into band `n` of an orbital array."""
+function fft_components!(Hψk, n::Integer, basis, kpt, Hψ_reals::NTuple{C};
+                         normalize=true) where {C}
+    Hψ_components = as_components(Hψk)
+    @assert size(Hψ_components, 1) == C
+    for σ = 1:C
+        fft!(@view(Hψ_components[σ, :, n]), basis, kpt, Hψ_reals[σ]; normalize)
+    end
+    Hψk
+end
+
 
 # TODO optimize this
 function fft(fft_grid::FFTGrid, Gvec_mapping::AbstractVector{Int}, f_real::AbstractArray3; kwargs...)

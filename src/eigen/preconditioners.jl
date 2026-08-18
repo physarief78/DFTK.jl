@@ -39,7 +39,11 @@ function PreconditionerTPA(basis::PlaneWaveBasis{T}, kpt::Kpoint; default_shift=
     # TODO Annoying that one has to recompute the kinetic energies here. Perhaps
     #      it's better to pass a HamiltonianBlock directly and read the computed values.
     kinetic_term = only(kinetic_term)
-    kin = kinetic_energy(kinetic_term, basis.Ecut, Gplusk_vectors_cart(basis, kpt))
+    kin_scalar = kinetic_energy(kinetic_term, basis.Ecut, Gplusk_vectors_cart(basis, kpt))
+    # Components are the fastest-moving index in the flattened eigensolver view.
+    # repeat always allocates, so keep the single-component case free of the copy.
+    C = n_components(basis.model)
+    kin = C == 1 ? kin_scalar : repeat(kin_scalar; inner=C)
     PreconditionerTPA{T, typeof(kin)}(basis, kpt, kin, nothing, default_shift)
 end
 function PreconditionerTPA(ham::HamiltonianBlock; kwargs...)

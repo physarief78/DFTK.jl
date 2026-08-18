@@ -56,6 +56,8 @@ Get phonon quantities. We return the frequencies, the mass matrix and reduced an
 eigenvectors and dynamical matrices.
 """
 function phonon_modes(basis::PlaneWaveBasis{T}, ψ, occupation; kwargs...) where {T}
+    n_components(basis.model) == 1 || error(
+        "Phonons are not yet implemented for full spin polarization.")
     dynmat = compute_dynmat(basis::PlaneWaveBasis, ψ, occupation; kwargs...)
     dynmat_cart = dynmat_red_to_cart(basis.model, dynmat)
 
@@ -95,6 +97,8 @@ in reduced coordinates.
 @timing function compute_dynmat(basis::PlaneWaveBasis{T}, ψ, occupation; q=zero(Vec3{T}),
                                 ρ=nothing, ham=nothing, εF=nothing, eigenvalues=nothing,
                                 kwargs...) where {T}
+    n_components(basis.model) == 1 || error(
+        "Phonons are not yet implemented for full spin polarization.")
     # The phonon response solver assumes time-reversal symmetry: the trick used
     # to compute δρ from a single Sternheimer equation at +q (instead of one at
     # +q and one at -q) is only valid under TRS. See the discussion in

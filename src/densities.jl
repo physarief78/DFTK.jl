@@ -1,5 +1,46 @@
-# Densities (and potentials) are represented by arrays
-# ρ[ix,iy,iz,iσ] in real space, where iσ ∈ [1:n_spin_components]
+# Densities (and potentials) are represented by real arrays `ρ[ix, iy, iz, iρ]`.
+# Collinear densities retain their `(ρα, ρβ)` fields. Full-spin densities use Pauli
+# fields `(n, mx, my, mz)`, representing `ρmat = (n I + m⋅σ) / 2` pointwise.
+
+function _density_local_storage(basis, ::Type{Tρ}, ::Type{Tψ}, ::Val{C}) where {Tρ,Tψ,C}
+    ρ = zeros_like(G_vectors(basis), Tρ, basis.fft_size...,
+                   n_density_components(basis.model))
+    ψ_reals = ntuple(Val(C)) do _
+        zeros_like(G_vectors(basis), complex(Tψ), basis.fft_size...)
+    end
+    (; ρ, ψ_reals)
+end
+
+@views function _accumulate_density!(ρ, ::Val{1}, spin::Integer, weight, ψ_reals)
+    ρ[:, :, :, spin] .+= weight .* abs2.(only(ψ_reals))
+    ρ
+end
+
+@views function _accumulate_density!(ρ, ::Val{2}, spin::Integer, weight, ψ_reals)
+    @assert spin == 1
+    ψ1, ψ2 = ψ_reals
+    cross = conj.(ψ1) .* ψ2
+    ρ[:, :, :, 1] .+= weight .* (abs2.(ψ1) .+ abs2.(ψ2))
+    ρ[:, :, :, 2] .+= 2weight .* real.(cross)
+    ρ[:, :, :, 3] .+= 2weight .* imag.(cross)
+    ρ[:, :, :, 4] .+= weight .* (abs2.(ψ1) .- abs2.(ψ2))
+    ρ
+end
+
+@views function _accumulate_density!(ρ, ::Val{C}, spin::Integer, weight,
+                                     ψ_reals) where {C}
+    @assert spin == 1
+    pauli = generalized_pauli_matrices(Val(C), real(eltype(first(ψ_reals))))
+    for i = 1:C^2
+        contribution = sum(1:C) do σ
+            sum(1:C) do τ
+                pauli[i][σ, τ] .* conj.(ψ_reals[σ]) .* ψ_reals[τ]
+            end
+        end
+        ρ[:, :, :, i] .+= weight .* real.(contribution)
+    end
+    ρ
+end
 
 """
     compute_density(basis::PlaneWaveBasis, ψ::AbstractVector, occupation::AbstractVector)
@@ -26,8 +67,7 @@ using an optional `occupation_threshold`. By default all occupation numbers are 
         # dual numbers, but not yet the FFT
         Tψ = promote_type(VT, real(eltype(ψ[1])))
 
-        (; ρ=zeros_like(G_vectors(basis), Tρ, basis.fft_size..., basis.model.n_spin_components),
-         ψnk_real=zeros_like(G_vectors(basis), complex(Tψ), basis.fft_size...))
+        _density_local_storage(basis, Tρ, Tψ, Val(n_components(basis.model)))
     end
     # We split the total iteration range (ik, n) in chunks, and parallelize over them.
     range = [(ik, n) for ik = 1:length(basis.kpoints) for n = mask_occ[ik]]
@@ -35,10 +75,11 @@ using an optional `occupation_threshold`. By default all occupation numbers are 
     storages = parallel_loop_over_range(range; allocate_local_storage) do kn, storage
         (ik, n) = kn
         kpt = basis.kpoints[ik]
-        ifft!(storage.ψnk_real, basis, kpt, ψ[ik][:, n]; normalize=false)
-        storage.ρ[:, :, :, kpt.spin] .+= (occupation[ik][n] .* basis.kweights[ik]
-                                          .* (basis.fft_grid.ifft_normalization)^2
-                                          .* abs2.(storage.ψnk_real))
+        ifft_components!(storage.ψ_reals, basis, kpt, ψ[ik], n; normalize=false)
+        weight = (occupation[ik][n] * basis.kweights[ik]
+                  * basis.fft_grid.ifft_normalization^2)
+        _accumulate_density!(storage.ρ, Val(length(storage.ψ_reals)), kpt.spin,
+                             weight, storage.ψ_reals)
 
     end
     ρ = sum(storage -> storage.ρ, storages)
@@ -50,9 +91,58 @@ using an optional `occupation_threshold`. By default all occupation numbers are 
     # in a vacuum region, so put some tolerance even if occupation_threshold == 0
     negtol = max(sqrt(eps(T)), 10occupation_threshold)
     if mpi_master(basis.comm_kpts)
-        minimum(ρ) < -negtol && @warn("Negative $label detected", min_ρ=minimum(ρ))
+        # The magnetization fields of a full-spin density may legitimately be negative;
+        # only its total-density field is subject to this check. Keep the legacy path on
+        # the complete array both to validate every collinear channel and to avoid
+        # materializing a total-density cube in the one-component hot path.
+        min_ρ = if basis.model.spin_polarization == :full
+            minimum(view(ρ, :, :, :, 1))
+        else
+            minimum(ρ)
+        end
+        min_ρ < -negtol && @warn("Negative $label detected", min_ρ)
     end
 
+    ρ
+end
+
+# Zero-cost compatibility path for the established matrix-per-k-point representation.
+# Component-carrying orbitals are three-dimensional and therefore stay on the generic
+# Pauli-field implementation above.
+@views @timing function compute_density(basis::PlaneWaveBasis{T,VT},
+                                        ψ::AbstractVector{<:AbstractMatrix}, occupation;
+                                        occupation_threshold=zero(T), label=:ρ) where {T,VT}
+    n_components(basis.model) == 1 || throw(ArgumentError(
+        "Full-spin orbitals require an explicit component axis."))
+    occupation = [to_cpu(oc) for oc in occupation]
+    mask_occ = [findall(occnk -> abs(occnk) ≥ occupation_threshold, occk)
+                for occk in occupation]
+
+    function allocate_local_storage()
+        Tρ = promote_type(T, real(eltype(ψ[1])))
+        Tψ = promote_type(VT, real(eltype(ψ[1])))
+        (; ρ=zeros_like(G_vectors(basis), Tρ, basis.fft_size...,
+                        basis.model.n_spin_components),
+           ψnk_real=zeros_like(G_vectors(basis), complex(Tψ), basis.fft_size...))
+    end
+    range = [(ik, n) for ik = 1:length(basis.kpoints) for n = mask_occ[ik]]
+    storages = parallel_loop_over_range(range; allocate_local_storage) do kn, storage
+        (ik, n) = kn
+        kpt = basis.kpoints[ik]
+        ifft!(storage.ψnk_real, basis, kpt, ψ[ik][:, n]; normalize=false)
+        storage.ρ[:, :, :, kpt.spin] .+= (occupation[ik][n] * basis.kweights[ik]
+                                          * basis.fft_grid.ifft_normalization^2
+                                          .* abs2.(storage.ψnk_real))
+    end
+    ρ = sum(storage -> storage.ρ, storages)
+
+    mpi_sum!(ρ, basis.comm_kpts)
+    ρ = symmetrize_ρ(basis, ρ)
+    negtol = max(sqrt(eps(T)), 10occupation_threshold)
+    if mpi_master(basis.comm_kpts)
+        min_ρ = minimum(ρ)
+        min_ρ < -negtol && @warn("Negative $label detected", min_ρ)
+    end
     ρ
 end
 
@@ -60,6 +150,8 @@ end
 @views @timing function compute_δρ(basis::PlaneWaveBasis{T}, ψ, δψ, occupation,
                                    δoccupation=zero.(occupation);
                                    occupation_threshold=zero(T), q=zero(Vec3{T})) where {T}
+    n_components(basis.model) == 1 || error(
+        "Density response is not yet implemented for full spin polarization.")
     Tψ = promote_type(T, eltype(ψ[1]))
     # δρ is expected to be real when computations are not phonon-related.
     Tδρ = iszero(q) ? real(Tψ) : Tψ
@@ -75,7 +167,8 @@ end
                 for occk in occupation]
 
     function allocate_local_storage()
-        (; δρ=zeros_like(G_vectors(basis), Tδρ, basis.fft_size..., basis.model.n_spin_components),
+        (; δρ=zeros_like(G_vectors(basis), Tδρ, basis.fft_size...,
+                         n_density_components(basis.model)),
           ψnk_real=zeros_like(G_vectors(basis), Tψ, basis.fft_size...),
          δψnk_real=zeros_like(G_vectors(basis), Tψ, basis.fft_size...))
     end
@@ -112,6 +205,8 @@ end
 end
 
 @views @timing function compute_kinetic_energy_density(basis::PlaneWaveBasis, ψ, occupation)
+    n_components(basis.model) == 1 || error(
+        "Kinetic-energy densities are not yet implemented for full spin polarization.")
     T = promote_type(eltype(basis), real(eltype(ψ[1])))
     τ = similar(ψ[1], T, (basis.fft_size..., basis.model.n_spin_components))
     τ .= 0
@@ -173,6 +268,8 @@ Von Weizsäcker kinetic energy density, which is exact for one-electron systems
 @timing function von_weizsaecker_kinetic_energy_density(basis::PlaneWaveBasis,
                                                         ρ::AbstractArray{T};
                                                         ε_regularization=10eps(T)) where {T}
+    n_components(basis.model) == 1 || error(
+        "Von Weizsäcker densities are not yet implemented for full spin polarization.")
     ρ_fourier = fft(basis, ρ)
     τ = zero(ρ)
     G = [map(G -> G[α], G_vectors_cart(basis)) for α = 1:3]
@@ -188,15 +285,54 @@ Von Weizsäcker kinetic energy density, which is exact for one-electron systems
 end
 
 
-total_density(ρ) = dropdims(sum(ρ; dims=4); dims=4)
+"""
+    total_density(ρ)
+
+Return the total charge-density field. For full-spin input this is the first Pauli field.
+"""
+function total_density(ρ)
+    n_fields = size(ρ, 4)
+    if n_fields == 2
+        dropdims(sum(ρ; dims=4); dims=4)
+    else
+        copy(@view ρ[:, :, :, 1])
+    end
+end
+
+"""
+    spin_density(ρ)
+
+Return the collinear spin density. For full-spin input this returns `mz`; use
+[`magnetization`](@ref) to obtain all three Cartesian fields.
+"""
 @views function spin_density(ρ)
     if size(ρ, 4) == 2
         ρ[:, :, :, 1] - ρ[:, :, :, 2]
+    elseif size(ρ, 4) == 4
+        copy(ρ[:, :, :, 4])
     else
         zero(ρ[:, :, :])
     end
 end
 
+"""
+    magnetization(basis, ρ)
+
+Return the Cartesian magnetization fields as an `(fft_size..., 3)` array.
+"""
+@views function magnetization(basis, ρ)
+    T = eltype(ρ)
+    if basis.model.spin_polarization == :full
+        copy(ρ[:, :, :, 2:4])
+    elseif basis.model.spin_polarization == :collinear
+        zeros_xy = zeros_like(G_vectors(basis), T, basis.fft_size..., 2)
+        cat(zeros_xy, spin_density(ρ); dims=Val(4))
+    else
+        zeros_like(G_vectors(basis), T, basis.fft_size..., 3)
+    end
+end
+
+"""Construct the legacy one- or two-field density from total and collinear spin fields."""
 function ρ_from_total_and_spin(ρtot, ρspin=nothing)
     if isnothing(ρspin)
         # Val used to ensure inferability
@@ -207,13 +343,65 @@ function ρ_from_total_and_spin(ρtot, ρspin=nothing)
     end
 end
 
+"""
+    ρ_from_total_and_magnetization(ρtot, magnetization)
+
+Construct full-spin Pauli fields `(n, mx, my, mz)` from a total-density cube and an
+`(fft_size..., 3)` Cartesian magnetization array.
+"""
+function ρ_from_total_and_magnetization(ρtot, magnetization)
+    @assert size(magnetization) == (size(ρtot)..., 3)
+    cat(ρtot, magnetization; dims=Val(4))
+end
+
 function ρ_from_total(basis, ρtot::AbstractArray{T}) where {T}
     if basis.model.spin_polarization in (:none, :spinless)
         ρspin = nothing
+    elseif basis.model.spin_polarization == :full
+        magnetization = zeros_like(G_vectors(basis), T, basis.fft_size..., 3)
+        return ρ_from_total_and_magnetization(ρtot, magnetization)
     else
         ρspin = zeros_like(G_vectors(basis), T, basis.fft_size...)
     end
     ρ_from_total_and_spin(ρtot, ρspin)
+end
+
+
+struct DensityMatrixView{C,N,T,A<:AbstractArray{T,4}} <:
+       AbstractArray{SMatrix{C,C,Complex{T},N},3}
+    fields::A
+end
+Base.size(view::DensityMatrixView) = size(view.fields)[1:3]
+Base.IndexStyle(::Type{<:DensityMatrixView}) = IndexCartesian()
+function Base.getindex(view::DensityMatrixView{C,N}, i::Int, j::Int,
+                       k::Int) where {C,N}
+    fields = SVector{N}(ntuple(l -> view.fields[i, j, k, l], Val(N)))
+    density_matrix(fields)
+end
+
+"""
+    density_matrices(ρ)
+
+Return a lazy three-dimensional view of the pointwise Hermitian density matrices encoded
+by a `C²`-field density array.
+"""
+function density_matrices(ρ::AbstractArray{T,4}) where {T}
+    C = isqrt(size(ρ, 4))
+    C^2 == size(ρ, 4) || throw(ArgumentError("Density field count must be C²."))
+    DensityMatrixView{C,C^2,T,typeof(ρ)}(ρ)
+end
+
+"""Encode pointwise Hermitian `matrices` into the generalized Pauli fields of `ρ`."""
+function from_density_matrices!(ρ::AbstractArray{T,4}, matrices) where {T}
+    size(ρ)[1:3] == size(matrices) || throw(DimensionMismatch("Grid sizes do not match."))
+    C = isqrt(size(ρ, 4))
+    C^2 == size(ρ, 4) || throw(ArgumentError("Density field count must be C²."))
+    # Broadcast rather than index elementwise, such that this also works on the device.
+    fields = pauli_components.(matrices)
+    for i = 1:C^2
+        @views ρ[:, :, :, i] .= getindex.(fields, i)
+    end
+    ρ
 end
 
 #
@@ -235,11 +423,11 @@ pack_gdensity(basis::PlaneWaveBasis, ρ::AbstractArray, τ::Nothing) = ρ
 pack_gdensity(basis, ρ::AbstractArray, τ::AbstractArray) = cat(ρ, τ; dims=Val(4))
 function split_gdensity(basis::PlaneWaveBasis, x::AbstractArray{T, 4}) where {T}
     # TODO: This breaks when non-collinear spin is implemented
-    n_spin = basis.model.n_spin_components
-    @assert size(x, 4) == n_spin || size(x, 4) == 2n_spin
-    if size(x, 4) == 2n_spin
-        ρ = @view x[:, :, :,        1:n_spin]
-        τ = @view x[:, :, :, n_spin+1:end   ]
+    n_density = n_density_components(basis.model)
+    @assert size(x, 4) == n_density || size(x, 4) == 2n_density
+    if size(x, 4) == 2n_density
+        ρ = @view x[:, :, :,           1:n_density]
+        τ = @view x[:, :, :, n_density+1:end      ]
         (ρ, τ)
     else
         (x, nothing)

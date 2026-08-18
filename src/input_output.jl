@@ -80,6 +80,8 @@ function todict!(dict, model::Model)
     dict["n_dim"]             = model.n_dim
     dict["spin_polarization"] = model.spin_polarization
     dict["n_spin_components"] = model.n_spin_components
+    dict["n_components"]      = n_components(model)
+    dict["n_density_components"] = n_density_components(model)
     dict["temperature"]       = model.temperature
     dict["smearing"]          = string(model.smearing)
     dict["n_atoms"]           = length(model.atoms)
@@ -228,8 +230,9 @@ Some details on the conventions for the returned data:
   is valid.
 - `kpt_G_vectors`: `(3, max_n_G, n_kpoints, n_spin)` array of the integer
   (reduced) coordinates of the G-points used for each k-point.
-- `ψ`: `(max_n_G, n_bands, n_kpoints, n_spin)` arrays where `max_n_G` is the maximal
-  number of G-vectors used for any k-point. The data is zero-padded, i.e.
+- `ψ`: `(max_n_G, n_bands, n_kpoints, n_spin)` for scalar orbitals and
+  `(n_components, max_n_G, n_bands, n_kpoints, n_spin)` for multicomponent orbitals.
+  `max_n_G` is the maximal number of G-vectors used for any k-point. Data is zero-padded, i.e.
   for k-points which have less G-vectors than max_n_G, then there are
   tailing zeros.
 """
@@ -334,7 +337,7 @@ function and their outputs merged. Only the master process
 returns meaningful data.
 
 Some details on the conventions for the returned data:
-- `ρ`: (fft_size[1], fft_size[2], fft_size[3], n_spin) array of density on real-space grid.
+- `ρ`: `(fft_size..., n_density_components)` array of density fields on the real-space grid.
 - `energies`: Dictionary / subdirectory containing the energy terms
 - `converged`: Has the SCF reached convergence
 - `norm_Δρ`: Most recent change in ρ during an SCF step

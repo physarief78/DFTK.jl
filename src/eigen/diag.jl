@@ -12,38 +12,43 @@ function diagonalize_all_kblocks(eigensolver, ham::Hamiltonian, nev_per_kpoint::
                                  tol=1e-6, miniter=1, maxiter=100, n_conv_check=nothing)
     kpoints = ham.basis.kpoints
     results = Vector{Any}(undef, length(kpoints))
+    C = n_components(ham.basis.model)
+    component_count = Val(C)
 
     for (ik, kpt) in enumerate(kpoints)
         n_Gk = length(G_vectors(ham.basis, kpt))
-        if n_Gk < nev_per_kpoint
-            error("The size of the plane wave basis is $n_Gk, and you are asking for " *
+        block_size = C * n_Gk
+        if block_size < nev_per_kpoint
+            error("The size of the Hamiltonian block is $block_size, and you are asking for " *
                   "$nev_per_kpoint eigenvalues. Increase Ecut.")
         end
         # Get ψguessk
         if !isnothing(ψguess)
-            if n_Gk != size(ψguess[ik], 1)
-                error("Mismatch in dimension between guess ($(size(ψguess[ik], 1)) and " *
-                      "Hamiltonian ($n_Gk)")
+            ψguessk_matrix = as_matrix(ψguess[ik])
+            if block_size != size(ψguessk_matrix, 1)
+                error("Mismatch in dimension between guess ($(size(ψguessk_matrix, 1))) " *
+                      "and Hamiltonian ($block_size)")
             end
-            nev_guess = size(ψguess[ik], 2)
+            nev_guess = size(ψguessk_matrix, 2)
             if nev_guess > nev_per_kpoint
-                ψguessk = ψguess[ik][:, 1:nev_per_kpoint]
+                ψguessk = ψguessk_matrix[:, 1:nev_per_kpoint]
             elseif nev_guess == nev_per_kpoint
-                ψguessk = ψguess[ik]
+                ψguessk = ψguessk_matrix
             else
-                X0 = similar(ψguess[ik], n_Gk, nev_per_kpoint)
-                X0[:, 1:nev_guess] = ψguess[ik]
-                X0[:, nev_guess+1:end] = randn(eltype(X0), n_Gk, nev_per_kpoint - nev_guess)
+                X0 = similar(ψguessk_matrix, block_size, nev_per_kpoint)
+                X0[:, 1:nev_guess] = ψguessk_matrix
+                X0[:, nev_guess+1:end] = randn(eltype(X0), block_size,
+                                                nev_per_kpoint - nev_guess)
                 ψguessk = ortho_qr(X0)
             end
         elseif interpolate_kpoints && ik > 1
             # use information from previous k-point
             ψguessk = interpolate_kpoint(results[ik - 1].X, ham.basis, kpoints[ik - 1],
-                                         ham.basis, kpoints[ik])
+                                         ham.basis, kpoints[ik], component_count)
         else
-            ψguessk = random_orbitals(ham.basis, kpt, nev_per_kpoint)
+            ψguessk = as_matrix(random_orbitals(ham.basis, kpt, nev_per_kpoint))
         end
-        @assert size(ψguessk) == (n_Gk, nev_per_kpoint)
+        @assert size(ψguessk) == (block_size, nev_per_kpoint)
 
         prec = nothing
         !isnothing(prec_type) && (prec = prec_type(ham[ik]))
@@ -57,7 +62,9 @@ function diagonalize_all_kblocks(eigensolver, ham::Hamiltonian, nev_per_kpoint::
     #      Note further that lobpcg_hyper by default puts the eigenvalues
     #      on the CPU ... even if the next line is removed.
     (; λ=[to_cpu(real.(res.λ)) for res in results],  # Always get onto the CPU
-     X=[res.X for res in results],
+     X=[_canonical_orbitals(res.X, component_count,
+                            length(G_vectors(ham.basis, kpt)))
+        for (res, kpt) in zip(results, kpoints)],
      residual_norms=[res.residual_norms for res in results],
      n_iter=[res.n_iter for res in results],
      converged=all(res.converged for res in results),
@@ -70,7 +77,9 @@ Tuple returned by `diagonalize_all_kblocks`.
 """
 function select_eigenpairs_all_kblocks(eigres, range)
     merge(eigres, (; λ=[λk[range] for λk in eigres.λ],
-                   X=[Xk[:, range] for Xk in eigres.X],
+                   # Copy, such that the selection does not alias (and keep alive) the
+                   # full diagonalisation blocks and stays a plain array.
+                   X=[copy(_select_bands(Xk, range)) for Xk in eigres.X],
                    residual_norms=[resk[range] for resk in eigres.residual_norms]))
 end
 

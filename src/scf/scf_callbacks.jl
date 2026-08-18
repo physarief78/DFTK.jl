@@ -39,7 +39,8 @@ function (cb::ScfDefaultCallback)(info)
     info.n_iter ≤ 1 && (cb.prev_time[] = 0)
 
     show_dtau = hasproperty(info, :history_Δτ) && !isnothing(info.τ)
-    show_magn = info.basis.model.spin_polarization == :collinear && cb.show_magnetic_moments
+    show_magn = info.basis.model.spin_polarization in (:collinear, :full) &&
+                cb.show_magnetic_moments
     show_diag = hasproperty(info, :diagonalization)
     show_damp = hasproperty(info, :α) && cb.show_damping
     show_time = hasproperty(info, :runtime_ns) && cb.show_time
@@ -82,8 +83,15 @@ function (cb::ScfDefaultCallback)(info)
         println(label_damp[2], label_diag[2], label_time[2], label_memo[2], label_dmem[2])
     end
     E    = isnothing(info.energies) ? Inf : info.energies.total
-    magn = sum(spin_density(info.ρ)) * info.basis.dvol
-    abs_magn = sum(abs, spin_density(info.ρ)) * info.basis.dvol
+    if info.basis.model.spin_polarization == :full
+        m = magnetization(info.basis, info.ρ)
+        integrated = Vec3(ntuple(α -> sum(@view(m[:, :, :, α])) * info.basis.dvol, 3))
+        magn = norm(integrated)
+        abs_magn = sum(sqrt.(sum(abs2, m; dims=4))) * info.basis.dvol
+    else
+        magn = sum(spin_density(info.ρ)) * info.basis.dvol
+        abs_magn = sum(abs, spin_density(info.ρ)) * info.basis.dvol
+    end
 
     tstr = cb.show_time ? " "^9 : ""
     if show_time

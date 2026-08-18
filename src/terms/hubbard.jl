@@ -126,6 +126,8 @@ function Hubbard(manifold_to_U::Vararg{T}) where {T <: Pair}
 end
 
 function (hubbard::Hubbard{T})(basis::AbstractBasis) where {T}
+    n_components(basis.model) == 1 || error(
+        "Hubbard corrections are not yet implemented for full spin polarization.")
     manifolds = [resolve_hubbard_manifold(manifold, basis.model) for manifold in hubbard.manifolds]
     projs, labels = atomic_orbital_projectors(basis)
     manifold_data = map(manifold -> extract_manifold(manifold, projs, labels), manifolds)

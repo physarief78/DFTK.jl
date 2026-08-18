@@ -77,6 +77,8 @@ include("exact_exchange.jl")
 include("magnetic.jl")
 breaks_symmetries(::Magnetic) = true
 breaks_time_reversal_symmetry(::Magnetic) = true
+breaks_symmetries(::MagneticField) = true
+breaks_time_reversal_symmetry(::MagneticField) = true
 
 include("anyonic.jl")
 breaks_symmetries(::Anyonic) = true
@@ -109,8 +111,11 @@ In this case the matrix has effectively 4 blocks
 ```
 """
 @timing function compute_kernel(basis::PlaneWaveBasis{T}; kwargs...) where {T}
-    n_spin = basis.model.n_spin_components
-    kernel = zeros(T, n_spin * prod(basis.fft_size), n_spin * prod(basis.fft_size))
+    n_components(basis.model) == 1 || error(
+        "Response kernels are not yet implemented for full spin polarization.")
+    n_density = n_density_components(basis.model)
+    kernel = zeros(T, n_density * prod(basis.fft_size),
+                   n_density * prod(basis.fft_size))
     for term in basis.terms
         isnothing(term) && continue
         kernel .+= compute_kernel(term, basis; kwargs...)
@@ -129,6 +134,8 @@ Returns a named tuple containing any combination of δVρ and δVτ,
 the variations in local potential and nonlocal meta-GGA potential (divAgrad) respectively.
 """
 @timing function apply_kernel(basis::PlaneWaveBasis, δρ; δτ=nothing, kwargs...)
+    n_components(basis.model) == 1 || error(
+        "Density response is not yet implemented for full spin polarization.")
     n_spin = basis.model.n_spin_components
     @assert 1 ≤ n_spin ≤ 2
 

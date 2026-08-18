@@ -20,7 +20,11 @@ where the `kernel` keyword argument is an [`InteractionKernel`](@ref) , typicall
     scaling_factor::Real = 1.0
     kernel = ProbeCharge(BareCoulomb())
 end
-(ex::ExactExchange)(basis) = TermExactExchange(basis, ex.scaling_factor, ex.kernel)
+function (ex::ExactExchange)(basis)
+    n_components(basis.model) == 1 || error(
+        "Exact exchange is not yet implemented for full spin polarization.")
+    TermExactExchange(basis, ex.scaling_factor, ex.kernel)
+end
 
 struct TermExactExchange{T, Tkernel, Tq} <: Term
     scaling_factor::T             # scaling factor, absorbed into interaction_kernels

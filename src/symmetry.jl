@@ -276,6 +276,14 @@ function apply_symop(symop::SymOp, basis, kpoint, ψk::AbstractVecOrMat)
     Skpoint, ψSk
 end
 
+function apply_symop(symop::SymOp, basis, kpoint, ψk::AbstractArray{<:Any,3})
+    isone(symop) && return kpoint, ψk
+    # Mapping a spinor to the rotated k-point requires the SU(2) rotation accompanying the
+    # spatial operation. Applying the spatial part to each component separately (as the
+    # scalar method does) would silently return a wrong result, so refuse instead.
+    error("Symmetries are not yet implemented for multicomponent orbitals.")
+end
+
 """
 Apply a symmetry operation to a density.
 """

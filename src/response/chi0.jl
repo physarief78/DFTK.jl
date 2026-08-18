@@ -15,6 +15,8 @@ In this case the matrix has effectively 4 blocks, which are:
 function compute_χ0(ham;
                     temperature=ham.basis.model.temperature,
                     smearing=ham.basis.model.smearing)
+    n_components(ham.basis.model) == 1 || error(
+        "Independent-particle response is not yet implemented for full spin polarization.")
     # We're after χ0(r,r') such that δρ = ∫ χ0(r,r') δV(r') dr'
     # where (up to normalizations)
     # ρ = ∑_nk f(εnk - εF) |ψnk|^2
@@ -580,6 +582,8 @@ function apply_χ0(ham, ψ, occupation, εF::T, eigenvalues, δV::AbstractArray{
                   bandtolalg=BandtolBalanced(ham.basis, ψ, occupation; occupation_threshold),
                   kwargs...) where {T, TδV}
     basis = ham.basis
+    n_components(basis.model) == 1 || error(
+        "Independent-particle response is not yet implemented for full spin polarization.")
 
     # Make δV respect the basis symmetry group, since we won't be able
     # to compute perturbations that don't anyway

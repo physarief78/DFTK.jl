@@ -58,6 +58,24 @@ Notes:
     ΔDOS_Ω::Real = 0.0  # == (DOS_α - DOS_β) / Ω; set == kTF^2/4π to disable acting on β density
 end
 
+_assemble_kerker_density(::Val{1}, δρtot, δF, args...) =
+    ρ_from_total_and_spin(δρtot, nothing)
+function _assemble_kerker_density(::Val{2}, δρtot, δF, δF_fourier,
+                                  δFtot_fourier, G², kTF, ΔDOS_Ω, basis)
+    if abs(ΔDOS_Ω) < eps(real(eltype(δF)))
+        ρ_from_total_and_spin(δρtot, spin_density(δF))
+    else
+        δFspin_fourier = spin_density(δF_fourier)
+        δρspin_fourier = @. δFspin_fourier -
+                            δFtot_fourier * (4π * ΔDOS_Ω) / (kTF^2 + G²)
+        ρ_from_total_and_spin(δρtot, irfft(basis, δρspin_fourier))
+    end
+end
+function _assemble_kerker_density(::Val{N}, δρtot, δF, args...) where {N}
+    @assert N > 2
+    cat(δρtot, @view(δF[:, :, :, 2:N]); dims=Val(4))
+end
+
 @timing "KerkerMixing" function mix_density(mixing::KerkerMixing, basis::PlaneWaveBasis,
                                             δF; kwargs...)
     T      = eltype(δF)
@@ -88,16 +106,8 @@ end
     # Copy DC component, otherwise it never gets updated
     δρtot .+= mean(total_density(δF)) .- mean(δρtot)
 
-    if basis.model.n_spin_components == 1
-        ρ_from_total_and_spin(δρtot, nothing)
-    elseif abs(ΔDOS_Ω) < eps(real(T))
-        ρ_from_total_and_spin(δρtot, spin_density(δF))
-    else
-        δFspin_fourier = spin_density(δF_fourier)
-        δρspin_fourier = @. δFspin_fourier - δFtot_fourier * (4π * ΔDOS_Ω) / (kTF^2 + G²)
-        δρspin = irfft(basis, δρspin_fourier)
-        ρ_from_total_and_spin(δρtot, δρspin)
-    end
+    _assemble_kerker_density(Val(n_density_components(basis.model)), δρtot, δF,
+                             δF_fourier, δFtot_fourier, G², kTF, ΔDOS_Ω, basis)
 end
 
 
@@ -300,11 +310,21 @@ end
 
 @views @timing "χ0Mixing" function mix_density(mixing::χ0Mixing, basis, Δρ::AbstractArray{T};
                                                kwargs...) where {T}
+    if n_components(basis.model) > 1
+        @warn "χ0/LDOS mixing is not implemented for full spin polarization; " *
+              "using KerkerMixing instead." maxlog=1
+        return mix_density(KerkerMixing(), basis, Δρ)
+    end
     mix_dielectric_model(mixing, basis, Δρ; act_on_density=true, kwargs...)
 end
 
 @timing "χ0Mixing" function mix_potential(mixing::χ0Mixing, basis, ΔV::AbstractArray{T};
                                           kwargs...) where {T}
+    if n_components(basis.model) > 1
+        @warn "χ0/LDOS mixing is not implemented for full spin polarization; " *
+              "using KerkerMixing instead." maxlog=1
+        return mix_potential(KerkerMixing(), basis, ΔV)
+    end
     mix_dielectric_model(mixing, basis, ΔV; act_on_density=false, kwargs...)
 end
 

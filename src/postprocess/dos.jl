@@ -271,7 +271,9 @@ function atomic_orbital_projections(basis::PlaneWaveBasis{T}, ψ;
                                     positions = basis.model.positions) where {T}
     projectors, labels = atomic_orbital_projectors(basis; isonmanifold, positions)
     projections = map(ψ, projectors) do ψk, projectorsk
-        abs2.(ψk' * projectorsk)
+        sum(each_component(ψk)) do ψk_component
+            abs2.(ψk_component' * projectorsk)
+        end
     end
 
     return (; projections, labels)

@@ -112,15 +112,18 @@ Transfer an array `ψk` defined on basis_in ``k``-point kpt_in to basis_out ``k`
 function transfer_blochwave_kpt(ψk_in, basis_in::PlaneWaveBasis, kpt_in::Kpoint,
                                 basis_out::PlaneWaveBasis, kpt_out::Kpoint)
     kpt_in == kpt_out && return copy(ψk_in)
-    @assert length(G_vectors(basis_in, kpt_in)) == size(ψk_in, 1)
+    ψk_in_components = as_components(ψk_in)
+    C, n_G_in, n_bands = size(ψk_in_components)
+    @assert length(G_vectors(basis_in, kpt_in)) == n_G_in
     idcsk_in, idcsk_out = transfer_mapping(basis_in, kpt_in, basis_out, kpt_out)
 
-    n_bands = size(ψk_in, 2)
-    ψk_out  = similar(ψk_in, length(G_vectors(basis_out, kpt_out)), n_bands)
-    ψk_out .= 0
-    ψk_out[idcsk_out, :] .= ψk_in[idcsk_in, :]
+    n_G_out = length(G_vectors(basis_out, kpt_out))
+    ψk_out_components = similar(ψk_in_components, C, n_G_out, n_bands)
+    fill!(ψk_out_components, 0)
+    @views ψk_out_components[:, idcsk_out, :] .= ψk_in_components[:, idcsk_in, :]
 
-    ψk_out
+    ndims(ψk_in) == 2 ? reshape(ψk_out_components, n_G_out, n_bands) :
+                           ψk_out_components
 end
 
 """

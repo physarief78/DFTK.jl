@@ -77,6 +77,8 @@ function direct_minimization(basis::PlaneWaveBasis{T};
                              linesearch=LineSearches.BackTracking(),
                              seed=nothing,
                              kwargs...) where {T}
+    n_components(basis.model) == 1 || error(
+        "Direct minimization is not yet implemented for full spin polarization.")
     if mpi_nprocs(basis.comm_kpts) > 1
         # need synchronization in Optim
         error("Direct minimization with MPI is not supported yet")

@@ -37,6 +37,18 @@ function kinetic_energy(kin::Kinetic, Ecut, p)
     kinetic_energy(kin.blowup, kin.scaling_factor, Ecut, p)
 end
 
+function _kinetic_band_energies(ψk::AbstractMatrix, kinetic_energies)
+    real.(vec(columnwise_dots(ψk, Diagonal(kinetic_energies), ψk)))
+end
+function _kinetic_band_energies(ψk, kinetic_energies)
+    sum(each_component(ψk)) do component
+        # Component views are strided for C>1, which would miss the GPU-specialised
+        # columnwise_dots and fall back to scalar indexing, so materialise them.
+        ψkσ = copy(component)
+        real.(vec(columnwise_dots(ψkσ, Diagonal(kinetic_energies), ψkσ)))
+    end
+end
+
 @timing "ene_ops: kinetic" function ene_ops(term::TermKinetic, basis::PlaneWaveBasis{T},
                                             ψ, occupation; kwargs...) where {T}
     ops = [FourierMultiplication(basis, kpoint, term.kinetic_energies[ik])
@@ -47,9 +59,8 @@ end
 
     E = zero(T)
     for (ik, ψk) in enumerate(ψ)
-        E += basis.kweights[ik] * 
-             sum(occupation[ik] .* 
-                 real(vec(columnwise_dots(ψk, Diagonal(term.kinetic_energies[ik]), ψk))))
+        band_energies = _kinetic_band_energies(ψk, term.kinetic_energies[ik])
+        E += basis.kweights[ik] * sum(occupation[ik] .* band_energies)
     end
     E = mpi_sum(E, basis.comm_kpts)
 

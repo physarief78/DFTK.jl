@@ -63,17 +63,17 @@ end
 
 @doc raw"""
 Re-organize Bloch waves computed in a given basis as Bloch waves of the associated
-supercell basis.
-The output `ψ_supercell` have a single component at ``Γ``-point, such that
-`ψ_supercell[Γ][:, k+n]` contains `ψ[k][:, n]`, within normalization on the supercell.
+supercell basis. Scalar orbitals retain their matrix representation. Multicomponent
+orbitals retain their `(component, G, band)` representation.
 """
 function cell_to_supercell(ψ, basis::PlaneWaveBasis{T},
                            basis_supercell::PlaneWaveBasis{T}) where {T <: Real}
     # Ensure that the basis is unfolded.
     length(basis.kgrid) != length(basis.kpoints) && error("basis must be unfolded")
 
-    num_kpG   = sum(size.(ψ, 1))
-    num_bands = size(ψ[1], 2)
+    C = n_components(basis.model)
+    num_kpG = length(G_vectors(basis_supercell, only(basis_supercell.kpoints)))
+    num_bands = _n_bands(ψ[1])
 
     # Maps k+G vector of initial basis to a G vector of basis_supercell
     function cell_supercell_mapping(kpt)
@@ -82,14 +82,15 @@ function cell_to_supercell(ψ, basis::PlaneWaveBasis{T},
     end
 
     # Transfer all ψ[k] independently and return the hcat of all blocs
-    ψ_out_blocs = []
+    ψ_out_blocks = []
     for (ik, kpt) in enumerate(basis.kpoints)
-        ψk_supercell = zeros(complex(T), num_kpG, num_bands)
-        ψk_supercell[cell_supercell_mapping(kpt), :] .= ψ[ik]
-        push!(ψ_out_blocs, ψk_supercell)
+        ψk_supercell = zeros(complex(T), C, num_kpG, num_bands)
+        ψk_supercell[:, cell_supercell_mapping(kpt), :] .= as_components(ψ[ik])
+        push!(ψ_out_blocks, ψk_supercell)
     end
-    # Note that each column is normalize since each ψ[ik][:,n] is.
-    reduce(hcat, ψ_out_blocs)
+    # Every band stays normalized because the reciprocal-space mappings are disjoint.
+    ψ_supercell = reduce((left, right) -> cat(left, right; dims=3), ψ_out_blocks)
+    C == 1 ? reshape(ψ_supercell, num_kpG, :) : ψ_supercell
 end
 
 @doc raw"""
@@ -113,7 +114,8 @@ function cell_to_supercell(scfres::NamedTuple)
     ψ_supercell     = [cell_to_supercell(ψ, basis, basis_supercell)]
     eigs_supercell  = [reduce(vcat, scfres_unfold.eigenvalues)]
     perms = [sortperm(eigs_supercell[ik]) for ik = 1:length(eigs_supercell)]
-    ψ_supercell     = [ψ_supercell[ik][:, perms[ik]] for ik = 1:length(ψ_supercell)]
+    ψ_supercell     = [_select_bands(ψ_supercell[ik], perms[ik])
+                       for ik = 1:length(ψ_supercell)]
     eigs_supercell  = [eigs_supercell[ik][perms[ik]] for ik = 1:length(eigs_supercell)]
     occ_supercell   = compute_occupation(basis_supercell, eigs_supercell, scfres.εF).occupation
     ρ_supercell     = compute_density(basis_supercell, ψ_supercell, occ_supercell;

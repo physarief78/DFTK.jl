@@ -21,6 +21,8 @@ and `positions` in the underlying [`Model`](@ref).
     directions not keeping the symmetries of the phyiscal model.
 """
 @timing function compute_forces(basis::PlaneWaveBasis{T}, ψ, occupation; kwargs...) where {T}
+    n_components(basis.model) == 1 || error(
+        "Forces are not yet implemented for full spin polarization.")
     # no explicit symmetrization is performed here, it is the
     # responsibility of each term to return symmetric forces
     forces_per_term = [compute_forces(term, basis, ψ, occupation; kwargs...)

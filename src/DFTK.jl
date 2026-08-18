@@ -82,6 +82,9 @@ export compute_fft_size
 export G_vectors, G_vectors_cart, r_vectors, r_vectors_cart
 export Gplusk_vectors, Gplusk_vectors_cart
 export Kpoint
+export n_components, n_density_components
+export component_view, each_component, spinors, as_matrix, as_components
+export spin_projections
 export ifft
 export irfft
 export ifft!
@@ -90,6 +93,8 @@ export fft!
 export KgridTotalNumber, KgridSpacing
 include("Smearing.jl")
 include("Model.jl")
+include("spin_matrix.jl")
+export hermitian_basis, density_matrix, pauli_components, potential_matrix
 include("structure.jl")
 include("bzmesh.jl")
 include("fft.jl")
@@ -125,6 +130,7 @@ export AtomicLocal
 export LocalNonlinearity
 export Hartree
 export Xc
+export to_locally_collinear, potential_from_locally_collinear
 export AtomicNonlocal
 export Ewald
 export PspCorrection
@@ -132,6 +138,7 @@ export Entropy
 export Hubbard
 export OrbitalManifold
 export Magnetic
+export MagneticField
 export PairwisePotential
 export Anyonic
 export apply_kernel
@@ -149,6 +156,8 @@ export compute_kinetic_energy_density
 export total_density
 export spin_density
 export ρ_from_total_and_spin
+export magnetization, ρ_from_total_and_magnetization
+export density_matrices, from_density_matrices!
 include("densities.jl")
 include("transfer.jl")
 include("interpolation.jl")

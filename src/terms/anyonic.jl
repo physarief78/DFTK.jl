@@ -63,6 +63,8 @@ struct Anyonic
     β
 end
 function (A::Anyonic)(basis)
+    n_components(basis.model) == 1 || error(
+        "Anyonic terms are not implemented for multicomponent orbitals.")
     @assert length(basis.kpoints) == 1
     @assert basis.kpoints[1].coordinate == [0, 0, 0]
     @assert basis.model.n_dim == 2

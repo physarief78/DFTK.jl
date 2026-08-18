@@ -32,10 +32,12 @@ struct Model{T <: Real, VT <: Real}
     #     :collinear  Spin is polarized, but everywhere in the same direction.
     #                 αα ̸= ββ, αβ = βα = 0, 2 spin components treated
     #     :full       Generic magnetization, non-uniform direction.
-    #                 αβ, βα, αα, ββ all nonzero, different (not supported)
+    #                 αβ, βα, αα, ββ can all be nonzero
     #     :spinless   No spin at all ("spinless fermions", "mathematicians' electrons").
     #                 The difference with :none is that the occupations are 1 instead of 2
     spin_polarization::Symbol
+    # Number of independent k-point spin channels. This is distinct from both the
+    # wavefunction component count and the number of real density fields.
     n_spin_components::Int  # 2 if :collinear, 1 otherwise
 
     # If temperature==0, no fractional occupations are used.
@@ -100,7 +102,9 @@ a [`PlaneWaveBasis`](@ref) from a `Model`.
     else `None()`):
     Smearing function used to compute occupations from Kohn-Sham eigenvalues.
 - `spin_polarization::Symbol` (default: `determine_spin_polarization(magnetic_moments)`):
-    Controls spin treatment; allowed values are `:none`, `:collinear`, `:spinless`.
+    Controls spin treatment; allowed values are `:none`, `:collinear`, `:full`,
+    and `:spinless`. Full spin polarization is currently experimental and supports
+    locally-collinear LDA exchange-correlation functionals.
 - `symmetries` (default: `true`):
     - `true`: run automatic symmetry detection with [`default_symmetries`](@ref).
     - `false`: disable all symmetries.
@@ -189,7 +193,10 @@ function Model(lattice::AbstractMatrix{Tstatic},
     # Spin polarization
     spin_polarization in (:none, :collinear, :full, :spinless) ||
         error("Only :none, :collinear, :full and :spinless allowed for spin_polarization")
-    spin_polarization == :full && error("Full spin polarization not yet supported")
+    if spin_polarization == :full
+        @warn "Full spin polarization is experimental. Only LDA exchange-correlation " *
+              "and ground-state SCF calculations are currently supported." maxlog=1
+    end
     !isempty(magnetic_moments) && !(spin_polarization in (:collinear, :full)) && @warn(
         "Non-empty magnetic_moments on a Model without spin polarization detected."
     )
@@ -210,6 +217,12 @@ function Model(lattice::AbstractMatrix{Tstatic},
         symmetries = [one(SymOp)]
     end
     @assert !isempty(symmetries)  # Identity has to be always present.
+    # Symmetrization treats each density field as a scalar, which is only correct if the
+    # magnetization does not have to be rotated along. Until spin rotations are implemented
+    # only the identity is admissible for full spin polarization.
+    spin_polarization == :full && !all(isone, symmetries) && error(
+        "Symmetries are not yet implemented for full spin polarization; " *
+        "pass symmetries=false.")
 
     Model{T,value_type(T)}(model_name,
                            lattice, recip_lattice, n_dim, inv_lattice, inv_recip_lattice,
@@ -354,7 +367,7 @@ end
 Maximal occupation of a state (2 for non-spin-polarized electrons, 1 otherwise).
 """
 function filled_occupation(model)
-    if model.spin_polarization in (:spinless, :collinear)
+    if model.spin_polarization in (:spinless, :collinear, :full)
         return 1
     elseif model.spin_polarization == :none
         return 2
@@ -374,6 +387,25 @@ function spin_components(spin_polarization::Symbol)
     spin_polarization == :full      && return (:undefined, )
 end
 spin_components(model::Model) = spin_components(model.spin_polarization)
+
+"""
+    n_components(model_or_orbitals)
+
+Number of coupled wavefunction components. This is two for a full-spin model and one for
+the existing scalar modes. For an orbital array it is the size of the explicit component
+axis (or one for a matrix).
+"""
+n_components(model::Model) = model.spin_polarization == :full ? 2 : 1
+
+"""
+    n_density_components(model)
+
+Number of real density fields. Full-spin models use four Pauli fields `(n, mx, my, mz)`;
+the existing modes retain one field per spin channel.
+"""
+function n_density_components(model::Model)
+    model.spin_polarization == :full ? n_components(model)^2 : model.n_spin_components
+end
 
 # prevent broadcast
 import Base.Broadcast.broadcastable
