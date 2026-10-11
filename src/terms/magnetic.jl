@@ -71,7 +71,18 @@ end
 
 External Zeeman field with Hamiltonian contribution ``-\mathbf b(r)\cdot\boldsymbol\sigma``.
 `field` can be a constant three-vector, a function of Cartesian position, or an array of
-size `(basis.fft_size..., 3)`. This term requires `spin_polarization=:full`.
+size `(basis.fft_size..., 3)`. The energy is
+``E_Z = -\int \mathbf b(r)\cdot\mathbf m(r)\,dr``.
+
+Supported spin modes are `:collinear` and `:full`. In collinear mode the field must
+point along z: `MagneticField([0, 0, b])` adds potentials ``V_\uparrow=-b`` and
+``V_\downarrow=+b``. Transverse components require `spin_polarization=:full`.
+
+The field is an energy in Hartree: for g = 2, ``b = \mu_B B``, so 1 T corresponds
+to approximately 2.1272e-6 Ha. Positive b favours positive z magnetization.
+Without spin-orbit coupling a uniform field preserves spatial symmetries;
+spatially varying fields disable symmetry reduction. Full-spin models use identity
+symmetry in either case.
 """
 struct MagneticField{F}
     field::F
@@ -81,7 +92,7 @@ function _magnetic_field_values(basis::PlaneWaveBasis{T},
                                 field::AbstractArray{<:Any,4}) where {T}
     size(field) == (basis.fft_size..., 3) || throw(DimensionMismatch(
         "Magnetic-field values must have size (basis.fft_size..., 3)."))
-    to_device(basis.architecture, T.(field))
+    to_device(basis.architecture, convert_dual.(T, field))
 end
 function _magnetic_field_values(basis::PlaneWaveBasis{T}, field::Function) where {T}
     values = Array{T}(undef, basis.fft_size..., 3)
@@ -91,7 +102,7 @@ function _magnetic_field_values(basis::PlaneWaveBasis{T}, field::Function) where
         length(value) == 3 || throw(DimensionMismatch(
             "A magnetic-field function must return three entries."))
         for α = 1:3
-            values[index, α] = value[α]
+            values[index, α] = convert_dual(T, value[α])
         end
     end
     to_device(basis.architecture, values)
@@ -101,7 +112,7 @@ function _magnetic_field_values(basis::PlaneWaveBasis{T},
     length(field) == 3 || throw(DimensionMismatch("A uniform magnetic field needs 3 entries."))
     values = zeros(T, basis.fft_size..., 3)
     for α = 1:3
-        values[:, :, :, α] .= field[α]
+        values[:, :, :, α] .= convert_dual(T, field[α])
     end
     to_device(basis.architecture, values)
 end
@@ -110,9 +121,15 @@ function _magnetic_field_values(::PlaneWaveBasis, field)
 end
 
 function (term::MagneticField)(basis::PlaneWaveBasis)
-    basis.model.spin_polarization == :full || throw(ArgumentError(
-        "MagneticField requires spin_polarization=:full."))
-    TermMagneticField(_magnetic_field_values(basis, term.field))
+    spin = basis.model.spin_polarization
+    spin in (:collinear, :full) || throw(ArgumentError(
+        "MagneticField requires spin_polarization=:collinear or :full."))
+    field = _magnetic_field_values(basis, term.field)
+    if spin == :collinear && !iszero(@view field[:, :, :, 1:2])
+        throw(ArgumentError("For spin_polarization=:collinear the magnetic field must " *
+                            "point along z; use :full for transverse fields."))
+    end
+    TermMagneticField(field)
 end
 
 struct TermMagneticField{A} <: TermLinear
@@ -121,9 +138,16 @@ end
 
 function ene_ops(term::TermMagneticField, basis::PlaneWaveBasis{T}, ψ, occupation;
                  ρ=nothing, kwargs...) where {T}
-    potential = zeros_like(term.field, T, basis.fft_size..., 4)
-    @views potential[:, :, :, 2:4] .= .-term.field
-    ops = [MatrixLocalOperator(basis, kpt, potential) for kpt in basis.kpoints]
+    if basis.model.spin_polarization == :collinear
+        bz = @view term.field[:, :, :, 3]
+        potentials = (-bz, +bz)
+        ops = [RealSpaceMultiplication(basis, kpt, potentials[kpt.spin])
+               for kpt in basis.kpoints]
+    else
+        potential = zeros_like(term.field, T, basis.fft_size..., 4)
+        @views potential[:, :, :, 2:4] .= .-term.field
+        ops = [MatrixLocalOperator(basis, kpt, potential) for kpt in basis.kpoints]
+    end
     if isnothing(ρ)
         return (; E=T(Inf), ops)
     end
