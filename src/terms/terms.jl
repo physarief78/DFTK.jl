@@ -77,7 +77,8 @@ include("exact_exchange.jl")
 include("magnetic.jl")
 breaks_symmetries(::Magnetic) = true
 breaks_time_reversal_symmetry(::Magnetic) = true
-breaks_symmetries(::MagneticField) = true
+# Without spin-orbit coupling a uniform Zeeman field commutes with spatial symmetries.
+breaks_symmetries(t::MagneticField) = !(t.field isa Union{Tuple,AbstractVector})
 breaks_time_reversal_symmetry(::MagneticField) = true
 
 include("anyonic.jl")
