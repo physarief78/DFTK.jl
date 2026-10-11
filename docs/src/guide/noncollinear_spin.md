@@ -42,6 +42,29 @@ H_Z = -\mathbf b(\mathbf r)\cdot\boldsymbol\sigma,
 \qquad E_Z = -\int \mathbf b(\mathbf r)\cdot\mathbf m(\mathbf r)\,d\mathbf r.
 ```
 
+The term also supports `spin_polarization=:collinear`, where the field must point
+along z. For example, `MagneticField([0.0, 0.0, b])` adds ``-b`` to the spin-up
+potential and ``+b`` to the spin-down potential. Any nonzero transverse component
+raises an `ArgumentError`; use `:full` for transverse fields. Uniform and spatially
+varying z fields can be combined with the ordinary collinear functionals, including
+PBE and Hubbard U.
+
+The field parameter is an energy in Hartree, with ``b = \mu_B B`` for g = 2.
+A field of 1 T corresponds to approximately 2.1272e-6 Ha; positive b favours
+positive z magnetization. This term describes the spin Zeeman response without
+orbital magnetism or spin-orbit coupling.
+
+Without spin-orbit coupling, uniform fields supplied as a tuple or vector preserve
+the model's spatial symmetries. Function and array fields conservatively disable
+symmetry reduction. Full-spin models continue to use spatial identity symmetry.
+
+Collinear response calculations and ForwardDiff through the SCF are available
+without Hubbard U. For a field derivative, construct a basis with the dual scalar
+type, for example by converting the lattice to `typeof(b)` in the differentiated
+function. The field builder preserves dual values and strips them when rebuilding
+the primal basis. With Hubbard U, use finite differences: a Hubbard response kernel
+is not implemented.
+
 ## Current scope
 
 Supported functionality includes kinetic, scalar local, nonlocal pseudopotential, Hartree,
