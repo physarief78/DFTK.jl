@@ -119,6 +119,11 @@ end
     test_consistency_term(LocalNonlinearity(ρ -> ρ^2))
     test_consistency_term(Hartree())
 
+    test_consistency_term(MagneticField([0.0, 0.0, 0.1]);
+                          spin_polarization=:collinear)
+    test_consistency_term(MagneticField(r -> [0.0, 0.0, 0.1 * cos(r[1])]);
+                          spin_polarization=:collinear)
+
     let
         Si = ElementPsp(14, load_psp(silicon.psp_upf))
         hubbards = [
