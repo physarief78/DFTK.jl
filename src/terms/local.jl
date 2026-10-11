@@ -14,7 +14,9 @@ abstract type TermLocalPotential <: TermLinear end
            for kpt in basis.kpoints]
     ρ = get(kwargs, :ρ, nothing)
     if !isnothing(ρ)
-        E = sum(total_density(ρ) .* term.potential_values) * basis.dvol
+        potential = term.potential_values
+        density = ndims(potential) == 4 ? ρ : total_density(ρ)
+        E = sum(density .* potential) * basis.dvol
     else
         E = T(Inf)
     end

@@ -125,6 +125,17 @@ end
                           spin_polarization=:collinear)
 
     let
+        model = Model(silicon.lattice, silicon.atoms, silicon.positions;
+                      terms=[Kinetic()], spin_polarization=:collinear, symmetries=false)
+        basis = PlaneWaveBasis(model; Ecut=10,
+                               kgrid=MonkhorstPack([1, 2, 3]; kshift=[0, 1, 0]/2))
+        bz = map(r -> 0.1 + 0.03 * cos(r[1]), r_vectors_cart(basis))
+        potential = cat(-bz, bz; dims=4)
+        test_consistency_term(DFTK.ExternalFromValues(potential);
+                              spin_polarization=:collinear)
+    end
+
+    let
         Si = ElementPsp(14, load_psp(silicon.psp_upf))
         hubbards = [
             Hubbard(OrbitalManifold([1, 2], "3P") => 0.01),
