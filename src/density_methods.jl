@@ -19,7 +19,7 @@ end
 @doc raw"""
 Build a random charge density normalized to the provided number of electrons.
 """
-function random_density(basis::PlaneWaveBasis{T}, n_electrons::Integer) where {T}
+function random_density(basis::PlaneWaveBasis{T}, n_electrons::Real) where {T}
     ρtot  = rand(T, basis.fft_size)
     ρtot  = ρtot .* n_electrons ./ (sum(ρtot) * basis.dvol)  # Integration to n_electrons
     if basis.model.spin_polarization == :full

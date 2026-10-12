@@ -80,7 +80,7 @@ function select_occupied_orbitals(basis, ψ, occupation; threshold=0.0)
     if iszero(threshold)
         model   = basis.model
         n_spin  = model.n_spin_components
-        n_bands = div(model.n_electrons, n_spin * filled_occupation(model), RoundUp)
+        n_bands = ceil(Int, model.n_electrons / (n_spin * filled_occupation(model)))
         @assert n_bands == _n_bands(selected_ψ[1])
     end
     (; ψ=selected_ψ, occupation=selected_occ)

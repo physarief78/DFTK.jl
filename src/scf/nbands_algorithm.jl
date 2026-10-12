@@ -6,7 +6,7 @@ abstract type NbandsAlgorithm end
 
 function default_n_bands(model, temperature_factor=1.05)
     n_spin = model.n_spin_components
-    min_n_bands = div(model.n_electrons, n_spin * filled_occupation(model), RoundUp)
+    min_n_bands = ceil(Int, model.n_electrons / (n_spin * filled_occupation(model)))
     factor = iszero(model.temperature) ? 1.0 : temperature_factor
     ceil(Int, min_n_bands * factor)
 end
