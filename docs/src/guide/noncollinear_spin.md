@@ -49,10 +49,21 @@ raises an `ArgumentError`; use `:full` for transverse fields. Uniform and spatia
 varying z fields can be combined with the ordinary collinear functionals, including
 PBE and Hubbard U.
 
+The transverse-component check is exact, including for numerically constructed
+fields. Set x and y to exact zeros after a numerical rotation when a collinear
+z field is intended; a small residual component is still rejected.
+
 The field parameter is an energy in Hartree, with ``b = \mu_B B`` for g = 2.
 A field of 1 T corresponds to approximately 2.1272e-6 Ha; positive b favours
 positive z magnetization. This term describes the spin Zeeman response without
 orbital magnetism or spin-orbit coupling.
+
+On a gapped zero-temperature self-consistent branch with unchanged occupations,
+a uniform collinear z field only shifts the spin-channel eigenvalues, and the
+longitudinal spin susceptibility is exactly zero. Finite smearing can produce
+occupation tails even when a gap is present; Gaussian smearing is a numerical
+broadening, not a Fermi-Dirac temperature. A nonzero uniform zero-temperature
+longitudinal response requires changing the spin occupations, as in a metallic state.
 
 Without spin-orbit coupling, uniform fields supplied as a tuple or vector preserve
 the model's spatial symmetries. Function and array fields conservatively disable

@@ -1,7 +1,7 @@
-function parse_test_args()
+function parse_test_args(args=ARGS)
     # Parsing code
-    args = Symbol.(ARGS)
-    if "DFTK_TEST_ARGS" in keys(ENV) && isempty(ARGS)
+    args = Symbol.(args)
+    if "DFTK_TEST_ARGS" in keys(ENV) && isempty(args)
         args = Symbol.(split(ENV["DFTK_TEST_ARGS"], "-"))
     end
 
@@ -26,7 +26,8 @@ function parse_test_args()
         push!(excluded, :dont_test_windows)
     end
     for arg in filter(!in(keys(incl_excl)), args)
-        if startswith(string(arg), "no")
+        # Match the literal tag before interpreting the "no" exclusion prefix.
+        if arg != :noncollinear && startswith(string(arg), "no")
             push!(excluded, Symbol(string(arg)[3:end]))  # Strip "no" and add
         else
             push!(included, arg)
