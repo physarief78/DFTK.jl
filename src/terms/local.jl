@@ -15,7 +15,9 @@ abstract type TermLocalPotential <: TermLinear end
     ρ = get(kwargs, :ρ, nothing)
     if !isnothing(ρ)
         potential = term.potential_values
-        density = ndims(potential) == 4 ? ρ : total_density(ρ)
+        # Only collinear spin-resolved potentials couple to individual spin densities.
+        spin_resolved = ndims(potential) == 4 && basis.model.spin_polarization == :collinear
+        density = spin_resolved ? ρ : total_density(ρ)
         E = sum(density .* potential) * basis.dvol
     else
         E = T(Inf)

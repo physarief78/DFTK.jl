@@ -49,4 +49,17 @@ end
                                    nothing, nothing; ρ=scalar_ρ)
         @test scalar_result.E ≈ 0.3 atol=1e-14
     end
+
+    for values in (fill(0.3, fft_size), fill(0.3, fft_size..., 1))
+        full_model = Model(lattice; n_electrons=1, spin_polarization=:full,
+                           terms=[DFTK.ExternalFromValues(values)], symmetries=false)
+        full_basis = PlaneWaveBasis(full_model; Ecut=1, kgrid=(1, 1, 1),
+                                   fft_size=fft_size)
+        full_ρ = zeros(fft_size..., 4)
+        full_ρ[:, :, :, 1] .= inv(full_model.unit_cell_volume)
+        full_ρ[:, :, :, 4] .= 0.5 / full_model.unit_cell_volume
+        full_result = DFTK.ene_ops(only(full_basis.terms), full_basis,
+                                 nothing, nothing; ρ=full_ρ)
+        @test full_result.E ≈ 0.3 atol=1e-14
+    end
 end
