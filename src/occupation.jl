@@ -163,6 +163,7 @@ function compute_fermi_level(basis::AbstractBasis, eigenvalues, ::FermiZeroTempe
     filled_occ  = filled_occupation(basis.model)
     n_electrons = basis.model.n_electrons
     n_spin = basis.model.n_spin_components
+    isinteger(n_electrons) || error("fractional electron counts require temperature > 0")
     if n_electrons % (n_spin * filled_occ) != 0
         error("$n_electrons electrons cannot be attained by filling states with " *
               "occupation $filled_occ. Typically this indicates that you need to put " *
@@ -190,7 +191,7 @@ Therefore this function should generally only be used as a starting point for ot
 function guess_fermi_level_intocc_(basis::AbstractBasis, eigenvalues)
     filled_occ = filled_occupation(basis.model)
     n_spin = basis.model.n_spin_components
-    n_fill = div(basis.model.n_electrons, n_spin * filled_occ, RoundUp)
+    n_fill = ceil(Int, basis.model.n_electrons / (n_spin * filled_occ))
 
     # Highest occupied energy level
     HOMO = maximum([εk[n_fill] for εk in eigenvalues])

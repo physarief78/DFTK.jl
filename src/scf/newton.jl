@@ -96,7 +96,7 @@ function newton(basis::PlaneWaveBasis{T}, ψ0;
     # check that there are no virtual orbitals
     filled_occ = filled_occupation(model)
     n_spin = model.n_spin_components
-    n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp)
+    n_bands = ceil(Int, model.n_electrons / (n_spin * filled_occ))
     @assert n_bands == size(ψ0[1], 2)
 
     # number of kpoints and occupation

@@ -93,7 +93,7 @@ function direct_minimization(basis::PlaneWaveBasis{T};
     @assert isnothing(model.εF)        # neither are computations with fixed Fermi level
     filled_occ = filled_occupation(model)
     n_spin = model.n_spin_components
-    n_bands = div(model.n_electrons, n_spin * filled_occ, RoundUp)
+    n_bands = ceil(Int, model.n_electrons / (n_spin * filled_occ))
     Nk = length(basis.kpoints)
 
     if isnothing(ψ)

@@ -27,7 +27,7 @@ function energy_psp_correction(lattice::AbstractMatrix{T}, atoms, atom_groups) w
     correction_per_cell_and_electron = sum(atom_groups) do group
         length(group) * eval_psp_energy_correction(T, atoms[first(group)])::T
     end
-    n_electrons::Int = n_electrons_from_atoms(atoms)
+    n_electrons = n_electrons_from_atoms(atoms)
     correction_per_cell_and_electron * n_electrons / compute_unit_cell_volume(lattice)
 end
 function energy_psp_correction(model::Model)

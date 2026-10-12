@@ -21,9 +21,9 @@ struct Model{T <: Real, VT <: Real}
     unit_cell_volume::T
     recip_cell_volume::T
 
-    # Computations can be performed at fixed `n_electrons` (`n_electrons` Int, `εF` nothing),
+    # Computations can be performed at fixed `n_electrons` (`n_electrons` Real, `εF` nothing),
     # or fixed Fermi level (expert option, `n_electrons` nothing, `εF` T)
-    n_electrons::Union{Int, Nothing}
+    n_electrons::Union{Int, VT, Nothing}
     εF::Union{T, Nothing}
 
     # spin_polarization values:
@@ -89,7 +89,9 @@ a [`PlaneWaveBasis`](@ref) from a `Model`.
 - `positions::Vector{Vec3}`: Atomic positions in fractional (reduced) coordinates.
 
 ## Keyword arguments
-- `n_electrons::Int` (default: inferred from `atoms`): Total electron count.
+- `n_electrons::Real` (default: inferred from `atoms`): Total electron count.
+    Integer-valued counts are stored as `Int`; fractional counts use the model's
+    bare scalar type.
 - `magnetic_moments` (default: `[]`): Per-atom initial magnetic moments used to infer
     `spin_polarization` and to determine symmetries. These values influence model setup
     but are otherwise not stored on the `Model`.
@@ -117,6 +119,9 @@ a [`PlaneWaveBasis`](@ref) from a `Model`.
     Fermi level instead of fixed electron count. Mutually exclusive with `n_electrons`.
 
 ## Notes
+- Fractional electron counts model doping with a compensating background. They require
+    `temperature > 0`, a finite-temperature smearing, and
+    `disable_electrostatics_check=true` for a non-neutral cell.
 - `magnetic_moments` are used only to determine `spin_polarization` and symmetries,
     but are otherwise not stored on the `Model`.
 - The constructor validates consistency between `εF` and `n_electrons` and will error if
@@ -134,7 +139,7 @@ function Model(lattice::AbstractMatrix{Tstatic},
                positions::Vector{<:AbstractVector}=Vec3{Tstatic}[];
                model_name="custom",
                εF=nothing,
-               n_electrons::Union{Int,Nothing}=isnothing(εF) ?
+               n_electrons::Union{Real,Nothing}=isnothing(εF) ?
                                                n_electrons_from_atoms(atoms) : nothing,
                # Force electrostatics with non-neutral cells; results not guaranteed.
                # Set to `true` by default for charged systems.
@@ -159,10 +164,14 @@ function Model(lattice::AbstractMatrix{Tstatic},
             error("Coulomb electrostatics is incompatible with fixed Fermi level.")
         end
     else  # fixed number of electrons
+        isnothing(n_electrons) && error("Specify either n_electrons or a fixed Fermi level.")
+        isfinite(n_electrons) || error("n_electrons should be finite.")
         n_electrons < 0 && error("n_electrons should be non-negative.")
         if !disable_electrostatics_check && n_electrons_from_atoms(atoms) != n_electrons
             error("Support for non-neutral cells is experimental and likely broken.")
         end
+        # Preserve integer storage and keep fractional counts concretely typed.
+        n_electrons = isinteger(n_electrons) ? Int(n_electrons) : value_type(T)(n_electrons)
     end
 
     # Atoms and terms
@@ -204,6 +213,11 @@ function Model(lattice::AbstractMatrix{Tstatic},
 
     temperature = T(austrip(temperature))
     temperature < 0 && error("temperature must be non-negative")
+    if !isnothing(n_electrons) && !isinteger(n_electrons)
+        iszero(temperature) && error("fractional electron counts require temperature > 0")
+        smearing isa Smearing.None && error(
+            "fractional electron counts require finite-temperature smearing")
+    end
 
     if !allunique(string.(nameof.(typeof.(terms))))
         error("Having several terms of the same name is not supported.")
