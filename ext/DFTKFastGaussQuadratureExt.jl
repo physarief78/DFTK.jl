@@ -6,6 +6,26 @@ using LinearAlgebra
 
 DFTK.error_if_kernel_not_available(::Type{<:VoxelAverage}, string) = nothing
 
+function _coulomb_voxel_head(voxel_basis,nodes,weights)
+    T = eltype(voxel_basis)
+    integral = zero(T)
+    for i=1:3
+        u_i = voxel_basis[:,i]
+        u_j = voxel_basis[:,mod1(i+1,3)]
+        u_k = voxel_basis[:,mod1(i+2,3)]
+        normal = cross(u_j,u_k)
+        area = norm(normal)
+        h = abs(dot(u_i,normal))/(2area)
+        face_integral = zero(T)
+        for (wa,a) in zip(weights,nodes),(wb,b) in zip(weights,nodes)
+            r = 0.5f0*u_i+a*u_j+b*u_k
+            face_integral += wa*wb/dot(r,r)
+        end
+        integral += 2h*area*face_integral
+    end
+    4T(π)*integral/abs(det(voxel_basis))
+end
+
 # ∫cell d²p/|p| = ∮boundary (p⋅n)/|p| ds, for a centred parallelogram.
 function _slab_voxel_singular_integral(u,v)
     area = norm(cross(u,v))
@@ -83,7 +103,6 @@ end
 
     # Define Voxels as reciprocal cell divided by k-mesh
     voxel_basis = model.recip_lattice * Diagonal(1 ./ Vec3{T}(kgrid_size))
-    voxel_vol = abs(det(voxel_basis))
 
     # Get Gauss-Legendre nodes and weights and scale from [-1, 1] to [-0.5, 0.5]
     nodes_std, weights_std = gausslegendre(voxel_average.n_quadrature_points)
@@ -108,37 +127,7 @@ end
             # covers the rest if kernel is different from BareCoulomb().
 
             # Transforms volume integral ∫ 1/G^2 dV to surface integral Σ h * ∫ 1/G^2 dS
-            integral = zero(T)
-            for i in 1:3
-                u_i = voxel_basis[:, i]
-                u_j = voxel_basis[:, mod1(i+1, 3)]
-                u_k = voxel_basis[:, mod1(i+2, 3)]
-
-                # Height of the face from origin
-                normal = cross(u_j, u_k)
-                area_norm = norm(normal)
-
-                # Calculate distance h from center to face.
-                # Since face is at u_i/2, h = |(u_i/2) . n|
-                h = abs(dot(u_i, normal)) / (2 * area_norm)
-
-                # Integrate 1/G^2 over the face parallelogram
-                face_integral = zero(T)
-                for (wa, a) in zip(weights, nodes)
-                    for (wb, b) in zip(weights, nodes)
-                        # Parametrization of the face: r = u_i/2 + a*u_j + b*u_k
-                        r_vec = 0.5f0 * u_i + a * u_j + b * u_k 
-                        r_sq  = dot(r_vec, r_vec)
-                        face_integral += wa * wb / r_sq
-                    end
-                end
-
-                # Add contribution: 2 faces * h * Area * Mean(1/r^2)
-                # Area factor (area_norm) comes from the Jacobian.
-                integral += 2 * h * area_norm * face_integral
-            end
-
-            kernel_fourier[iG] = 4T(π) * (integral / voxel_vol)
+            kernel_fourier[iG] = _coulomb_voxel_head(voxel_basis,nodes,weights)
         end
 
         # === Use smooth 3D Gaussian Quadrature ===
@@ -173,5 +162,7 @@ end
 
     to_device(basis.architecture, kernel_fourier)
 end
+
+include("rpa_optical_voxel.jl")
 
 end
