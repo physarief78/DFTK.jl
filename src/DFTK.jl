@@ -237,6 +237,9 @@ export plot_dos
 export plot_ldos
 export plot_pdos
 include("postprocess/dos.jl")
+export compute_velocity, compute_dielectric, compute_drude_weight
+export refractive_index, absorption_coefficient, loss_function, fit_tauc
+include("postprocess/optics.jl")
 export compute_χ0
 export apply_χ0
 include("response/cg.jl")
