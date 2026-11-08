@@ -33,7 +33,9 @@ function ene_ops(term::TermEntropy, basis::PlaneWaveBasis{T}, ψ, occupation;
             E -= (temperature
                   * basis.kweights[ik]
                   * filled_occupation(basis.model)
-                  * Smearing.entropy(smearing, (eigenvalues[ik][iband] - εF) / temperature))
+                  * _occupation_entropy(smearing,eigenvalues[ik][iband],εF,iband,
+                                         occupation[ik][iband]/filled_occupation(basis.model),
+                                         temperature))
         end
     end
     E = mpi_sum(E, basis.comm_kpts)
@@ -42,3 +44,6 @@ function ene_ops(term::TermEntropy, basis::PlaneWaveBasis{T}, ψ, occupation;
 end
 compute_kernel(term::TermEntropy, basis::AbstractBasis; kwargs...) = nothing
 apply_kernel(term::TermEntropy, basis::AbstractBasis, δρ; kwargs...) = (;)
+
+_occupation_entropy(smearing,ε,εF,n,f,temperature) =
+    Smearing.entropy(smearing,(ε-_band_fermi_level(εF,n))/temperature)

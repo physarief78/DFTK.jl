@@ -316,6 +316,7 @@ are initialised to zero.
 function compute_δocc!(δocc, basis::PlaneWaveBasis{T}, ψ, εF, ε, δHψ, δtemperature;
                        temperature=basis.model.temperature,
                        smearing=basis.model.smearing) where {T}
+    _check_occupation_response(εF)
     model = basis.model
     filled_occ = filled_occupation(model)
 
@@ -581,6 +582,7 @@ function apply_χ0(ham, ψ, occupation, εF::T, eigenvalues, δV::AbstractArray{
                   q=zero(Vec3{eltype(ham.basis)}),
                   bandtolalg=BandtolBalanced(ham.basis, ψ, occupation; occupation_threshold),
                   kwargs...) where {T, TδV}
+    _check_occupation_response(εF)
     basis = ham.basis
     n_components(basis.model) == 1 || error(
         "Independent-particle response is not yet implemented for full spin polarization.")
