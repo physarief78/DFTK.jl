@@ -113,6 +113,7 @@ include("Energies.jl")
 
 export BareCoulomb
 export SphericallyTruncatedCoulomb
+export SlabTruncatedCoulomb
 export WignerSeitzTruncatedCoulomb
 export ShortRangeCoulomb, LongRangeCoulomb
 export ProbeCharge, ReplaceSingularity, VoxelAverage
@@ -130,6 +131,7 @@ export AtomicLocal
 export LocalNonlinearity
 export Hartree
 export SheetCounterCharge
+export DipoleCorrection
 export Xc
 export to_locally_collinear, potential_from_locally_collinear
 export AtomicNonlocal
@@ -248,6 +250,10 @@ export plot_dos
 export plot_ldos
 export plot_pdos
 include("postprocess/dos.jl")
+export planar_average, compute_electrostatic_potential, compute_work_function
+export density_difference, cumulative_density, compute_hirshfeld
+export compute_fragment_pdos, write_cube
+include("postprocess/electrostatics.jl")
 export compute_χ0
 export apply_χ0
 include("response/cg.jl")

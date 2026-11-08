@@ -49,6 +49,51 @@ compute_probe_charge_integral(kernel, α)   # ∫_{BZ} k̂(q) e^{-α q²} dq  (n
 abstract type InteractionKernel end
 Base.Broadcast.broadcastable(k::InteractionKernel) = Ref(k)
 
+@doc raw"""
+Slab-truncated Coulomb kernel, ``v(r)=θ(R-|r⋅n|)/r``:
+```math
+v(p)=\frac{4π}{p^2}\left[1+e^{-p_∥R}
+\left(\frac{p_⊥}{p_∥}\sin(p_⊥R)-\cos(p_⊥R)\right)\right].
+```
+For a periodic slab choose `R` equal to half the cell height, `normal` along the
+reciprocal lattice normal, and q in the slab plane. At p∥=0 the finite nonzero
+reciprocal-grid modes are evaluated analytically; p=0 is divergent and needs an
+explicit singularity treatment. This kernel is for screening/exchange; it does
+not by itself replace the 3D ionic Ewald and Hartree electrostatics.
+Reference: Ismail-Beigi, Phys. Rev. B 73, 233103 (2006).
+"""
+struct SlabTruncatedCoulomb{T} <: InteractionKernel
+    R::T
+    normal::Vec3{T}
+end
+function SlabTruncatedCoulomb(R;normal=[0,0,1])
+    R = float(austrip(R))
+    R > 0 || throw(ArgumentError("The slab cutoff must be positive."))
+    norm(normal) > 0 || throw(ArgumentError("The slab normal must be nonzero."))
+    T = promote_type(typeof(R),eltype(normal))
+    SlabTruncatedCoulomb(T(R),Vec3{T}(normal/norm(normal)))
+end
+function SlabTruncatedCoulomb(basis::PlaneWaveBasis;direction=3)
+    normal = basis.model.inv_lattice[direction,:]
+    SlabTruncatedCoulomb(inv(2norm(normal));normal)
+end
+function eval_kernel_fourier(kernel::SlabTruncatedCoulomb,p::AbstractVector{T}) where {T}
+    p2 = norm2(p)
+    iszero(p2) && return T(Inf)
+    perpendicular = dot(p,kernel.normal)
+    parallel = norm(p-perpendicular*kernel.normal)
+    x = perpendicular*kernel.R
+    if parallel < eps(T)*max(one(T),sqrt(p2))
+        abs(sin(x)) < sqrt(eps(T)) || error(
+            "p∥=0 requires reciprocal-grid modes with R equal to half the slab height.")
+        return 4T(π)/p2 * (1-cos(x))
+    end
+    # expm1 avoids cancellation in the in-plane long wavelength limit.
+    bracket = -expm1(-parallel*kernel.R) + exp(-parallel*kernel.R)*
+        (2sin(x/2)^2+perpendicular/parallel*sin(x))
+    4T(π)/p2 * bracket
+end
+
 function eval_kernel_fourier(kernel::InteractionKernel, p::AbstractVector)
     error("$(nameof(typeof(kernel))) has no pointwise Fourier representation. " *
           "Evaluate it on a grid via eval_kernel_fourier(kernel, basis, q).")
