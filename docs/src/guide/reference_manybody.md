@@ -27,16 +27,37 @@ with an explicit Drude derivative for optical metallic response. The default
 q=0 kernel omits its singular mesh point. That convention is exposed in the
 returned `kernel`; it is not a converged singularity integral.
 
-For BSE, supply a callable `screening(q)` returning static RPA at ω=η=0. It must
-use a justified q=0 singularity treatment (for example the existing `VoxelAverage`
-extension with `FastGaussQuadrature` for bulk), a converged screening cutoff and enough
-empty bands. Use `SlabTruncatedCoulomb` for isolated-sheet screening, with its
-normal and half-height cutoff set to the actual supercell. With
-`FastGaussQuadrature`, `VoxelAverage(SlabTruncatedCoulomb(basis))` averages over
-the two-dimensional reciprocal cell, subtracting the integrable `4πR/|q|`
-singularity analytically. This is tested against an independent Duffy integral.
-Converge its quadrature, q mesh and q-dependent screening before claiming slab
-binding energies; a correct bare-kernel integral alone does not validate W or BSE.
+For BSE, supply a callable `screening(q)` returning static W at ω=η=0. At q=0,
+averaging only the bare Coulomb head leaves bulk interband screening out of that
+cell. `compute_rpa_screening_voxel` instead builds the long-wavelength head and
+wings from velocities and averages **W**. It includes microscopic local fields
+and an explicitly supplied carrier compressibility. For bulk insulators the
+anisotropic `4π/(qᵀεq)` head is integrated by a surface reduction. For sheets the
+analytic `4πR/|q|` singularity is subtracted before quadrature. Use the raw
+`BareCoulomb()` or `SlabTruncatedCoulomb(basis)` kernel for this routine; it requires
+`FastGaussQuadrature` and an even quadrature order.
+
+```julia
+kernel = BareCoulomb()  # or SlabTruncatedCoulomb(bands.basis)
+screening(q) = iszero(q) ?
+    compute_rpa_screening_voxel(bands; Ecut_response=1, kernel,
+                                occupation_derivative=derivative) :
+    compute_rpa(bands,q,[0.0]; η=0,Ecut_response=1,
+                kernel=VoxelAverage(kernel),occupation_derivative=derivative)
+```
+
+This is a long-wavelength model inside the central cell. Converge its quadrature,
+q mesh, empty bands and cutoff, especially relative to photocarrier Fermi
+wavevectors. It does not reproduce full finite-q screening across a coarse cell.
+The returned `dielectric_tensor` is defined only for insulating bulk. The cell
+result supplies unscaled W for BSE and is not a pointwise EELS response.
+
+The independent bare slab average `VoxelAverage(SlabTruncatedCoulomb(basis))`
+uses the two-dimensional reciprocal cell and is checked against a Duffy integral.
+Its normal and half-height cutoff must match the supercell. A correct kernel
+integral alone does not establish a converged slab binding energy. For the role
+of the small-q screened interaction see
+[Rasmussen et al.](https://arxiv.org/abs/1511.00129).
 
 `compute_bse` builds a Hermitian **singlet Tamm–Dancoff** matrix and diagonalizes
 it densely. Positive occupation differences enter kernels and oscillator strengths
