@@ -254,6 +254,9 @@ export planar_average, compute_electrostatic_potential, compute_work_function
 export density_difference, cumulative_density, compute_hirshfeld
 export compute_fragment_pdos, write_cube
 include("postprocess/electrostatics.jl")
+export compute_velocity, compute_dielectric, compute_drude_weight
+export refractive_index, absorption_coefficient, loss_function, fit_tauc
+include("postprocess/optics.jl")
 export compute_χ0
 export apply_χ0
 include("response/cg.jl")
