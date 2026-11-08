@@ -13,6 +13,53 @@
     @test_throws ArgumentError SlabTruncatedCoulomb(-1.0)
 end
 
+@testitem "Slab Coulomb: two-dimensional singularity integral" tags=[:slab] begin
+    using DFTK,FastGaussQuadrature,LinearAlgebra
+    extension = Base.get_extension(DFTK,:DFTKFastGaussQuadratureExt)
+    integral = extension._slab_voxel_singular_integral
+    @test integral([1.0,0,0],[0,1.0,0]) ≈ 4asinh(1)
+    @test integral([2.0,0,0],[0,2.0,0]) ≈ 8asinh(1)
+    model = Model(diagm([8.0,9.0,20.0]),fill(ElementCoulomb(:H),2),
+                  [[0.25,0.5,0.5],[0.75,0.5,0.5]];terms=[Kinetic()],symmetries=false)
+    basis = PlaneWaveBasis(model;Ecut=0.2,kgrid=[4,6,1],fft_size=(5,5,7))
+    kernel = SlabTruncatedCoulomb(basis)
+    q0 = Vec3(0.0,0,0)
+    averaged = DFTK.eval_kernel_fourier(VoxelAverage(kernel;n_quadrature_points=48),basis,q0)
+    @test all(isfinite,averaged)
+    @test averaged[1] > 0
+    # Independent Duffy quadrature: four triangles, p=s*((1-t)*a+t*b),
+    # whose Jacobian s removes the 1/|p| singularity without subtraction.
+    u,v = model.recip_lattice[:,1]/4,model.recip_lattice[:,2]/6
+    corners = [(u+v)/2,(-u+v)/2,(-u-v)/2,(u-v)/2]
+    nodes,weights = gausslegendre(64)
+    nodes,weights = (nodes.+1)/2,weights/2
+    reference = let value=0.0
+        for i=1:4
+            a,b = corners[i],corners[mod1(i+1,4)]
+            for (s,ws) in zip(nodes,weights),(t,wt) in zip(nodes,weights)
+                value += ws*wt*s*norm(cross(a,b))*
+                          DFTK.eval_kernel_fourier(kernel,s*((1-t)*a+t*b))
+            end
+        end
+        value/norm(cross(u,v))
+    end
+    @test averaged[1] ≈ reference rtol=2e-6
+    coarse = DFTK.eval_kernel_fourier(VoxelAverage(kernel;n_quadrature_points=12),basis,q0)
+    @test abs(averaged[1]-reference) < abs(coarse[1]-reference)
+    θ = 0.41
+    rotation = [1.0 0 0;0 cos(θ) -sin(θ);0 sin(θ) cos(θ)]
+    rotated_model = Model(model;lattice=rotation*model.lattice)
+    rotated_basis = PlaneWaveBasis(basis;model=rotated_model)
+    rotated = SlabTruncatedCoulomb(rotated_basis)
+    rotated_values = DFTK.eval_kernel_fourier(VoxelAverage(rotated;n_quadrature_points=48),
+                                             rotated_basis,q0)
+    @test rotated_values ≈ averaged rtol=1e-12
+    @test_throws ErrorException DFTK.eval_kernel_fourier(VoxelAverage(kernel),basis,
+                                                        Vec3(0.0,0,0.1))
+    @test_throws ErrorException DFTK.eval_kernel_fourier(
+        VoxelAverage(SlabTruncatedCoulomb(9.0)),basis,q0)
+end
+
 @testitem "Dipole correction: energy, potential, forces and kernel" tags=[:slab] begin
     using DFTK
     using LinearAlgebra
