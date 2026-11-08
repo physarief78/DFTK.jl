@@ -35,8 +35,8 @@ sum-over-states dynamical response uses the explicitly supplied occupations;
 `compute_χ0(ham)` by itself instead constructs an equilibrium reference.
 
 For L2, choose `n_electrons=Nneutral+q`, positive temperature, and optionally add
-`SheetCounterCharge(q; center=0.85, width=1.0)` to `extra_terms`. Its electron
-The fractional-electron model also requires `disable_electrostatics_check=true`.
+`SheetCounterCharge(q; center=0.85, width=1.0)` to `extra_terms`. The fractional-
+electron model also requires `disable_electrostatics_check=true`. Its electron
 potential is negative for positive sheet charge. Its three energy pieces replace
 the uniform background in the same zero-average electrostatic gauge. The sheet
 is classical and fixed; no carrier exchange or voltage boundary condition is
