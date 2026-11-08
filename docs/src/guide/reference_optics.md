@@ -21,6 +21,13 @@ derivative includes changes in the complete overlap matrix. A scissor rescales
 intermanifold matrix elements by the ratio of shifted to unshifted transition
 energies. It does not change the orbitals or occupations.
 
+After profiling the 42 Ha anatase calculation, optical projection uses BLAS for
+the coefficient matrices of first-order Float32/Float64 dual products. ForwardDiff
+still differentiates the complete projected Hamiltonian; no projector derivative
+is provided by hand. Nested duals and other number types keep generic multiplication.
+The resulting 64-k-point, 48-band dielectric tensor agrees with the original
+reference calculation to about `1.2e-14` in the tested anatase diagnostic.
+
 The dielectric function is a causal complex interband sum. Occupations include
 DFTK's spin degeneracy. A Drude term is included **only** when an explicit
 `occupation_derivative` array is supplied. Arbitrary occupations alone do not
