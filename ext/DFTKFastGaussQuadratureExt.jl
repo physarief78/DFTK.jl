@@ -6,6 +6,73 @@ using LinearAlgebra
 
 DFTK.error_if_kernel_not_available(::Type{<:VoxelAverage}, string) = nothing
 
+# ∫cell d²p/|p| = ∮boundary (p⋅n)/|p| ds, for a centred parallelogram.
+function _slab_voxel_singular_integral(u,v)
+    area = norm(cross(u,v))
+    integral = zero(eltype(u))
+    for (a,b) in ((u,v),(v,u))
+        length_b = norm(b)
+        h = area/(2length_b)
+        s = dot(a,b)/(2length_b)
+        integral += 2h*(asinh((s+length_b/2)/h)-asinh((s-length_b/2)/h))
+    end
+    integral
+end
+
+@doc raw"""
+For `VoxelAverage(SlabTruncatedCoulomb(...))`, average only over the in-plane
+reciprocal cell, with one k point along the perpendicular vacuum vector:
+```math
+\bar v(G+q)=A_q^{-1}\int_{\mathrm{cell}_{2D}}v(G+q+p)\,d^2p.
+```
+At the origin subtract `4πR/|p|` and integrate it analytically over the
+parallelogram. The remainder is finite and uses 2D Gauss quadrature. This
+integrates the bare kernel; q-dependent screening still needs k-mesh convergence.
+The vacuum lattice vector must be perpendicular to the slab, R must be its half
+height, and q must lie in the slab plane. No 3D voxel is substituted for the slab.
+"""
+function DFTK.eval_kernel_fourier(average::VoxelAverage{<:DFTK.SlabTruncatedCoulomb},
+                                 basis::PlaneWaveBasis{T},q::Vec3) where {T}
+    kernel = average.inner_kernel
+    basis.kgrid isa DFTK.MonkhorstPack || error("Slab averaging needs a MonkhorstPack mesh.")
+    B = basis.model.recip_lattice
+    alignments = [abs(dot(kernel.normal,B[:,i]))/norm(B[:,i]) for i=1:3]
+    d = argmax(alignments)
+    plane = filter(!=(d),1:3)
+    tolerance = 100eps(T)
+    abs(alignments[d]-1) ≤ tolerance && all(alignments[plane] .≤ tolerance) ||
+        error("Slab averaging needs a perpendicular vacuum lattice vector.")
+    basis.kgrid.kgrid_size[d] == 1 || error("Use one k point along the slab normal.")
+    abs(dot(kernel.normal,B*q)) ≤ tolerance*norm(B) || error("q must be in the slab plane.")
+    height = inv(norm(basis.model.inv_lattice[d,:]))
+    abs(2kernel.R/height-1) ≤ tolerance || error("Use a slab cutoff of half the cell height.")
+    average.n_quadrature_points ≥ 2 || throw(ArgumentError("Use at least two quadrature nodes."))
+    u,v = [B[:,i]/basis.kgrid.kgrid_size[i] for i in plane]
+    area = norm(cross(u,v))
+    nodes,weights = gausslegendre(average.n_quadrature_points)
+    nodes,weights = T.(nodes/2),T.(weights/2)
+    result = zeros(T,basis.fft_size)
+    for (i,G) in enumerate(to_cpu(DFTK.G_vectors(basis)))
+        p = B*(G+q)
+        singular = iszero(p)
+        value = singular ? 4T(π)*kernel.R*_slab_voxel_singular_integral(u,v)/area : zero(T)
+        for (x,wx) in zip(nodes,weights),(y,wy) in zip(nodes,weights)
+            δp = x*u+y*v
+            integrand = if singular
+                r = norm(δp)
+                z = r*kernel.R
+                z < sqrt(eps(T)) ? -2T(π)*kernel.R^2 :
+                    4T(π)*(-expm1(-z)-z)/r^2
+            else
+                eval_kernel_fourier(kernel,p+δp)
+            end
+            value += wx*wy*integrand
+        end
+        result[i] = value
+    end
+    to_device(basis.architecture,result)
+end
+
 @views function DFTK.eval_kernel_fourier(voxel_average::VoxelAverage,
                                          basis::PlaneWaveBasis{T}, q::Vec3) where {T}
     model  = basis.model

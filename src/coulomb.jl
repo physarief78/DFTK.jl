@@ -39,6 +39,7 @@ compute_probe_charge_integral(kernel, α)   # ∫_{BZ} k̂(q) e^{-α q²} dq  (n
 - [`ShortRangeCoulomb`](@ref): ``\mathrm{erfc}(μr)/r``
 - [`LongRangeCoulomb`](@ref): ``\mathrm{erf}(μr)/r``
 - [`SphericallyTruncatedCoulomb`](@ref): ``θ(R-r)/r``
+- [`SlabTruncatedCoulomb`](@ref): ``θ(R-|r⋅n|)/r``
 - [`WignerSeitzTruncatedCoulomb`](@ref): ``χ(r)/r`` (1 inside Wigner-Seitz cell, 0 otherwise)
 
 ### Available singularity treatments (wrapping a divergent kernel)
@@ -385,6 +386,11 @@ Calculates the average of the Coulomb kernel K(G+q) of `inner_kernel` over the B
 zone voxel associated with each grid point. It is particularly well suited for highly
 anisotropic cells. Note that this singularity treatment only becomes available once the
 `FastGaussQuadrature` module is explicitly loaded.
+
+For [`SlabTruncatedCoulomb`](@ref), the voxel is two-dimensional: one k point
+along a perpendicular vacuum vector, with q in the slab plane. Its integrable
+`4πR/|q|` singularity is subtracted and integrated analytically over the in-plane
+parallelogram. The following volume-integral description applies to 3D kernels.
 
 Since the Coulomb kernel is not necessarily given by ``K(G+q)=1/(G+q)^2`` the
 following approach is used:
