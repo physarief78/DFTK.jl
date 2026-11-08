@@ -21,7 +21,7 @@
         basis = PlaneWaveBasis(model; Ecut=10, kgrid=[4, 4, 4])
         nbandsalg = FixedBands(; n_bands_converge=8, occupation_threshold=1e-12)
         self_consistent_field(basis; tol=1e-11, maxiter=150, callback=identity,
-                              nbandsalg, seed=42)
+                              nbandsalg, seed=UInt64(42))
     end
 
     function metric(group; kwargs...)
@@ -63,7 +63,7 @@ end
         ρ = fill(130 / model.unit_cell_volume, basis.fft_size..., 1)
         nbandsalg = FixedBands(; n_bands_converge=65, occupation_threshold=1e-12)
         self_consistent_field(basis; ρ, nbandsalg, tol=1e-11,
-                              eigensolver=diag_full, callback=identity, seed=42)
+                              eigensolver=diag_full, callback=identity, seed=UInt64(42))
     end
     free_int = free_electrons(130)
     free_real = free_electrons(130.0)
@@ -187,7 +187,7 @@ end
     nbandsalg = AdaptiveBands(model; occupation_threshold=1e-12)
     scfres = self_consistent_field(basis; tol=1e-10, maxiter=200,
                                   ρ=guess_density(basis, magnetic_moments),
-                                  callback=identity, nbandsalg, seed=42)
+                                  callback=identity, nbandsalg, seed=UInt64(42))
     spin_counts = [sum(selectdim(scfres.ρ, 4, σ)) * basis.dvol for σ = 1:2]
     occupation_count = DFTK.weighted_ksum(basis, sum.(scfres.occupation))
     @test model.spin_polarization == :collinear
@@ -279,7 +279,7 @@ end
     basis = PlaneWaveBasis(model; Ecut=6, kgrid=[2, 2, 2])
     nbandsalg = FixedBands(; n_bands_converge=8, occupation_threshold=1e-12)
     scfres = self_consistent_field(basis; tol=1e-11, maxiter=80, callback=identity,
-                                  nbandsalg, seed=42)
+                                  nbandsalg, seed=UInt64(42))
     count_density = sum(total_density(scfres.ρ)) * basis.dvol
     count_occupation = DFTK.weighted_ksum(basis, sum.(scfres.occupation))
     @test scfres.converged
