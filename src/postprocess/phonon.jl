@@ -85,6 +85,7 @@ function _phonon_modes(basis::PlaneWaveBasis{T}, dynmat_cart) where {T}
     (; mass_matrix=M, frequencies, vectors_cart=reshape(res.vectors, 3, n_atoms, 3, n_atoms))
 end
 function phonon_modes(scfres::NamedTuple; kwargs...)
+    _check_occupation_response(scfres.εF,"Phonons")
     # TODO Pass down mixing and similar things to solve_ΩplusK_split
     phonon_modes(scfres.basis, scfres.ψ, scfres.occupation; scfres.ρ, scfres.ham,
                  scfres.occupation_threshold, scfres.εF, scfres.eigenvalues, kwargs...)
@@ -97,6 +98,7 @@ in reduced coordinates.
 @timing function compute_dynmat(basis::PlaneWaveBasis{T}, ψ, occupation; q=zero(Vec3{T}),
                                 ρ=nothing, ham=nothing, εF=nothing, eigenvalues=nothing,
                                 kwargs...) where {T}
+    _check_occupation_response(εF,"Phonons")
     n_components(basis.model) == 1 || error(
         "Phonons are not yet implemented for full spin polarization.")
     # The phonon response solver assumes time-reversal symmetry: the trick used

@@ -129,6 +129,7 @@ export ExternalFromReal
 export AtomicLocal
 export LocalNonlinearity
 export Hartree
+export SheetCounterCharge
 export Xc
 export to_locally_collinear, potential_from_locally_collinear
 export AtomicNonlocal
@@ -150,6 +151,7 @@ include("DispatchFunctional.jl")
 include("terms/terms.jl")
 
 export AbstractFermiAlgorithm, FermiBisection, FermiTwoStage
+export QuasiFermi, QuasiFermiLevels, FixedOccupations, compute_occupation_derivative
 include("occupation.jl")
 export compute_density
 export compute_kinetic_energy_density

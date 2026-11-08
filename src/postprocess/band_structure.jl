@@ -15,7 +15,7 @@ All kwargs not specified below are passed to [`diagonalize_all_kblocks`](@ref):
                                kgrid::Union{AbstractKgrid,AbstractKgridGenerator};
                                n_bands=default_n_bands_bandstructure(basis.model),
                                n_extra=3, ρ=nothing, τ=nothing, hubbard_n=nothing,
-                               εF=nothing, eigensolver=lobpcg_hyper, tol=1e-3,
+                               εF=nothing, fermialg=nothing, eigensolver=lobpcg_hyper, tol=1e-3,
                                seed=nothing, kwargs...)
     # kcoords are the kpoint coordinates in fractional coordinates
     if isnothing(ρ)
@@ -48,7 +48,9 @@ All kwargs not specified below are passed to [`diagonalize_all_kblocks`](@ref):
     eigres = select_eigenpairs_all_kblocks(eigres, 1:n_bands)
 
     occupation=nothing
-    if !isnothing(εF)
+    if !isnothing(fermialg)
+        (;occupation,εF) = compute_occupation(bs_basis,eigres.λ,fermialg)
+    elseif !isnothing(εF)
         (; occupation) = compute_occupation(bs_basis, eigres.λ, εF)
     end
 
@@ -59,7 +61,7 @@ All kwargs not specified below are passed to [`diagonalize_all_kblocks`](@ref):
     #      types subtype. In a first version the ScfResult could just contain
     #      the currently used named tuple and forward all operations to it.
     (; basis=bs_basis, ψ=eigres.X, eigenvalues=eigres.λ, ρ, τ, hubbard_n, εF, occupation,
-     diagonalization=[eigres], seed)
+     diagonalization=[eigres], seed, _occupation_metadata(εF)...)
 end
 
 """
@@ -72,9 +74,13 @@ function compute_bands(scfres::NamedTuple,
                        n_bands=default_n_bands_bandstructure(scfres), kwargs...)
     τ = haskey(scfres, :τ) ? scfres.τ : nothing
     hubbard_n = haskey(scfres, :hubbard_n) ? scfres.hubbard_n : nothing
+    fermialg = get(scfres,:fermialg,nothing)
+    fermialg isa FixedOccupations && error(
+        "Fixed ΔSCF band occupations cannot be transferred to another band mesh.")
+    fermialg = fermialg isa QuasiFermi ? fermialg : nothing
     compute_bands(scfres.basis, kgrid; 
                   scfres.ρ, τ, hubbard_n,
-                  scfres.εF, n_bands, kwargs...)
+                  scfres.εF, n_bands, fermialg, kwargs...)
 end
 
 """
