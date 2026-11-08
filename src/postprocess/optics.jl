@@ -16,39 +16,39 @@ function _shift_kpoint(basis, kpt, δk_cart)
            kpt.mapping_inv, kpt.mapping_device)
 end
 
-function _optical_kmatrix(builder::Kinetic, term, basis, kpt, ψk; kwargs...)
-    ψk' * Diagonal(kinetic_energy(builder, basis.Ecut,
-                                  Gplusk_vectors_cart(basis, kpt))) * ψk
+function _optical_kmatrix(builder::Kinetic, term, basis, kpt, ψleft, ψright=ψleft;
+                          kwargs...)
+    εkin = kinetic_energy(builder,basis.Ecut,Gplusk_vectors_cart(basis,kpt))
+    ψleft' * (εkin .* ψright)
 end
 
-function _optical_kmatrix(::AtomicNonlocal, term, basis, kpt, ψk; kwargs...)
+function _optical_kmatrix(::AtomicNonlocal, term, basis, kpt, ψleft, ψright=ψleft;
+                          kwargs...)
     groups = [g for g in basis.model.atom_groups
               if basis.model.atoms[first(g)] isa ElementPsp]
-    isempty(groups) && return zero(ψk' * ψk)
+    isempty(groups) && return zero(ψleft' * ψright)
     psps = [basis.model.atoms[first(g)].psp for g in groups]
     positions = [basis.model.positions[g] for g in groups]
     P = build_projection_vectors(basis, kpt, psps, positions)
     D = build_projection_coefficients(basis, psps, positions)
-    ψP = ψk' * P
-    ψP * D * ψP'
+    (ψleft' * P) * D * (P' * ψright)
 end
 
-function _optical_kmatrix(::Hubbard, term::TermHubbard, basis, kpt, ψk;
+function _optical_kmatrix(::Hubbard, term::TermHubbard, basis, kpt, ψleft, ψright=ψleft;
                           hubbard_n, kwargs...)
-    isempty(term.U) && return zero(ψk' * ψk)
+    isempty(term.U) && return zero(ψleft' * ψright)
     isnothing(hubbard_n) && error("Hubbard velocities require hubbard_n.")
     (; orbitals, labels) = _atomic_orbitals_nonorthogonal(basis; kpoints=[kpt])
     P = ortho_lowdin(only(orbitals))
     projectors = reduce(hcat, [only(extract_manifold(m, [P], labels).manifold_projectors)
                               for m in term.manifolds])
     D = hubbard_potential_coefficients(term, basis, hubbard_n)[kpt.spin]
-    ψP = ψk' * projectors
-    ψP * D * ψP'
+    (ψleft' * projectors) * D * (projectors' * ψright)
 end
 
-function _optical_kmatrix(builder, term, basis, kpt, ψk; kwargs...)
+function _optical_kmatrix(builder, term, basis, kpt, ψleft, ψright=ψleft; kwargs...)
     # Local multiplication and constant energies have no explicit k dependence.
-    zero(ψk' * ψk)
+    zero(ψleft' * ψright)
 end
 
 @doc raw"""

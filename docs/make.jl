@@ -56,6 +56,11 @@ PAGES = [
         "ecosystem/atomistic_simulation_environment.md",
         "ecosystem/wannier.jl",
     ],
+    "Reference excited-state tools" => [
+        "guide/constrained_occupations.md",
+        "guide/reference_optics.md",
+        "guide/reference_manybody.md",
+    ],
     "Tips and tricks" => [
         # Resolving convergence issues, what solver to use, improving performance or
         # reliability of calculations.
