@@ -257,6 +257,13 @@ include("postprocess/electrostatics.jl")
 export compute_velocity, compute_dielectric, compute_drude_weight
 export refractive_index, absorption_coefficient, loss_function, fit_tauc
 include("postprocess/optics.jl")
+export compute_effective_mass
+include("postprocess/effective_mass.jl")
+export compute_χ0_dynamic, compute_rpa, compute_eels
+include("postprocess/rpa.jl")
+export assemble_bse, compute_bse, compute_bse_dielectric
+export compute_exciton_densities, compute_exciton_character, wannier_mott
+include("postprocess/bse.jl")
 export compute_χ0
 export apply_χ0
 include("response/cg.jl")
