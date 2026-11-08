@@ -188,6 +188,12 @@ Overview of parameters:
     seed=nothing,
     response=ResponseOptions(),  # Dummy here, only for AD
 ) where {T}
+    if fermialg isa AbstractConstrainedOccupations
+        nbandsalg isa FixedBands || error("Constrained occupations require FixedBands.")
+        mixing isa χ0Mixing && error(
+            "Equilibrium LDOS/χ0 mixing does not support constrained occupations; " *
+            "choose SimpleMixing or KerkerMixing.")
+    end
     if !isnothing(ψ)
         @assert length(ψ) == length(basis.kpoints)
     end
@@ -281,7 +287,8 @@ Overview of parameters:
                 info.n_bands_converge, info.n_iter, info.n_matvec, ψ, info.diagonalization,
                 stage=:finalize, info.history_Δρ, info.history_Δτ, info.history_Etot,
                 info.timedout, is_converged, nbandsalg, fermialg, diagtolalg, solver,
-                eigensolver, mixing, seed, runtime_ns=time_ns() - start_ns, algorithm="SCF")
+                eigensolver, mixing, seed, runtime_ns=time_ns() - start_ns, algorithm="SCF",
+                _occupation_metadata(εF)...)
     callback(scfres)
     scfres
 end

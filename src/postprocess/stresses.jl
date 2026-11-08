@@ -26,6 +26,7 @@ for details. In Voigt notation one would use the vector
     of the physical model. See also the discussion in [`compute_forces`](@ref).
 """
 @timing function compute_stresses_cart(scfres)
+    _check_occupation_response(scfres.εF,"Stresses")
     n_components(scfres.basis.model) == 1 || error(
         "Stresses are not yet implemented for full spin polarization.")
     # compute the Hellmann-Feynman energy (with fixed ψ/occ/ρ)
