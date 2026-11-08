@@ -274,38 +274,48 @@ end
     ρ_cpu = compute_density(basis_cpu, [ψ_cpu], occupation)
     Hψ_cpu = only(Hamiltonian(basis_cpu).blocks) * as_matrix(ψ_cpu)
     # Reductions over the orbital components are a different device code path than the
-    # density and the Hamiltonian application: they need contiguous per-component arrays.
-    # (ene_ops itself cannot run on the device, because it multiplies the band energies
-    # with the host-resident occupations; that is independent of the spin polarization.)
+    # density and the Hamiltonian application, since they need contiguous per-component
+    # arrays. Note that on a GPU basis the occupations are expected to live on the device.
     kinetic_energies_cpu = basis_cpu.terms[1].kinetic_energies[1]
     band_energies_cpu = DFTK._kinetic_band_energies(ψ_cpu, kinetic_energies_cpu)
     projections_cpu = spin_projections(ψ_cpu)
+    energies_cpu = energy_hamiltonian(basis_cpu, [ψ_cpu], occupation; ρ=ρ_cpu).energies
 
     if CUDA.has_cuda() && CUDA.has_cuda_gpu()
         basis_cuda = PlaneWaveBasis(model; Ecut=1, kgrid=(1, 1, 1), fft_size=(9, 9, 9),
                                     architecture=DFTK.GPU(CuArray))
         ψ_cuda = CuArray(ψ_cpu)
-        ρ_cuda = compute_density(basis_cuda, [ψ_cuda], occupation)
+        occupation_cuda = [CuArray(occk) for occk in occupation]
+        ρ_cuda = compute_density(basis_cuda, [ψ_cuda], occupation_cuda)
         Hψ_cuda = only(Hamiltonian(basis_cuda).blocks) * as_matrix(ψ_cuda)
         kinetic_energies_cuda = basis_cuda.terms[1].kinetic_energies[1]
+        energies_cuda = energy_hamiltonian(basis_cuda, [ψ_cuda], occupation_cuda;
+                                           ρ=ρ_cuda).energies
         @test Array(ρ_cuda) ≈ ρ_cpu atol=2e-12
         @test Array(Hψ_cuda) ≈ Hψ_cpu atol=2e-12
         @test Array(DFTK._kinetic_band_energies(ψ_cuda, kinetic_energies_cuda)) ≈
               band_energies_cpu atol=2e-12
         @test Array(spin_projections(ψ_cuda)) ≈ projections_cpu atol=2e-12
+        @test energies_cuda.total ≈ energies_cpu.total atol=2e-12
+        @test energies_cuda["Kinetic"] ≈ energies_cpu["Kinetic"] atol=2e-12
     end
 
     if AMDGPU.has_rocm_gpu()
         basis_rocm = PlaneWaveBasis(model; Ecut=1, kgrid=(1, 1, 1), fft_size=(9, 9, 9),
                                     architecture=DFTK.GPU(ROCArray))
         ψ_rocm = ROCArray(ψ_cpu)
-        ρ_rocm = compute_density(basis_rocm, [ψ_rocm], occupation)
+        occupation_rocm = [ROCArray(occk) for occk in occupation]
+        ρ_rocm = compute_density(basis_rocm, [ψ_rocm], occupation_rocm)
         Hψ_rocm = only(Hamiltonian(basis_rocm).blocks) * as_matrix(ψ_rocm)
         kinetic_energies_rocm = basis_rocm.terms[1].kinetic_energies[1]
+        energies_rocm = energy_hamiltonian(basis_rocm, [ψ_rocm], occupation_rocm;
+                                           ρ=ρ_rocm).energies
         @test Array(ρ_rocm) ≈ ρ_cpu atol=2e-12
         @test Array(Hψ_rocm) ≈ Hψ_cpu atol=2e-12
         @test Array(DFTK._kinetic_band_energies(ψ_rocm, kinetic_energies_rocm)) ≈
               band_energies_cpu atol=2e-12
         @test Array(spin_projections(ψ_rocm)) ≈ projections_cpu atol=2e-12
+        @test energies_rocm.total ≈ energies_cpu.total atol=2e-12
+        @test energies_rocm["Kinetic"] ≈ energies_cpu["Kinetic"] atol=2e-12
     end
 end
