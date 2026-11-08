@@ -57,6 +57,7 @@ end
     end
     @test force ≈ -(displaced_energy(h)-displaced_energy(-h))/(2h) rtol=1e-8
     @test_throws ErrorException apply_kernel(term,basis,δρ;q=Vec3(0.1,0,0))
+    @test_throws ErrorException DFTK.compute_dynmat(term,basis,nothing,nothing)
 end
 
 @testitem "Electrostatic analysis: quadrature, Hirshfeld and cube" tags=[:slab] begin

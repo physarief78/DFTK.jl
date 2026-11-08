@@ -18,6 +18,7 @@
     ρ = guess_density(basis)
     E = DFTK.ene_ops(term,basis,nothing,nothing;ρ).E
     @test isfinite(E)
+    @test_throws ErrorException DFTK.compute_dynmat(term,basis,nothing,nothing)
     h = 1e-5
     function energy_at(z)
         m = Model(model;positions=[[0.4,0.5,z]])

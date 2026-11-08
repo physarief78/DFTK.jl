@@ -29,10 +29,12 @@ returned `kernel`; it is not a converged singularity integral.
 
 For BSE, supply a callable `screening(q)` returning static RPA at ω=η=0. It must
 use a justified q=0 singularity treatment (for example the existing `VoxelAverage`
-extension with `FastGaussQuadrature`), a converged screening cutoff and enough
+extension with `FastGaussQuadrature` for bulk), a converged screening cutoff and enough
 empty bands. Use `SlabTruncatedCoulomb` for isolated-sheet screening, with its
 normal and half-height cutoff set to the actual supercell. Converge q=0 voxel
-integration for a slab as well; simply omitting its head is insufficient.
+integration for a slab as well; simply omitting its head is insufficient. A
+validated 2D q=0 cell integral is still needed before slab binding energies can
+be claimed. Do not substitute the generic 3D voxel for that validation.
 
 `compute_bse` builds a Hermitian **singlet Tamm–Dancoff** matrix and diagonalizes
 it densely. Positive occupation differences enter kernels and oscillator strengths

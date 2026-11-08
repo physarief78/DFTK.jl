@@ -82,3 +82,7 @@ function compute_kernel(term::TermDipoleCorrection,basis::PlaneWaveBasis;kwargs.
     s = repeat(vec(term.coordinate),basis.model.n_spin_components)
     4π*basis.dvol/basis.model.unit_cell_volume * s*s'
 end
+
+compute_dynmat(::TermDipoleCorrection,::AbstractBasis,ψ,occupation;kwargs...) = error(
+    "DFPT ionic derivatives of DipoleCorrection are not implemented; " *
+    "use finite differences of the supported forces.")
