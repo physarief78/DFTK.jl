@@ -6,24 +6,32 @@ using LinearAlgebra
 
 DFTK.error_if_kernel_not_available(::Type{<:VoxelAverage}, string) = nothing
 
-function _coulomb_voxel_head(voxel_basis,nodes,weights)
+# Voxel average of 4π/p² over the parallelepiped spanned by the columns of `voxel_basis`.
+# The volume integral ∫ 1/p² dV is transformed to the surface integral Σ h ∫ 1/p² dS.
+function _coulomb_voxel_head(voxel_basis, nodes, weights)
     T = eltype(voxel_basis)
     integral = zero(T)
-    for i=1:3
-        u_i = voxel_basis[:,i]
-        u_j = voxel_basis[:,mod1(i+1,3)]
-        u_k = voxel_basis[:,mod1(i+2,3)]
-        normal = cross(u_j,u_k)
+    for i = 1:3
+        u_i = voxel_basis[:, i]
+        u_j = voxel_basis[:, mod1(i+1, 3)]
+        u_k = voxel_basis[:, mod1(i+2, 3)]
+
+        # Distance h from the centre to the face at u_i/2: h = |(u_i/2) . n|
+        normal = cross(u_j, u_k)
         area = norm(normal)
-        h = abs(dot(u_i,normal))/(2area)
+        h = abs(dot(u_i, normal)) / (2area)
+
+        # Integrate 1/p² over the face parallelogram r = u_i/2 + a*u_j + b*u_k
         face_integral = zero(T)
-        for (wa,a) in zip(weights,nodes),(wb,b) in zip(weights,nodes)
-            r = 0.5f0*u_i+a*u_j+b*u_k
-            face_integral += wa*wb/dot(r,r)
+        for (wa, a) in zip(weights, nodes), (wb, b) in zip(weights, nodes)
+            r = 0.5f0*u_i + a*u_j + b*u_k
+            face_integral += wa * wb / dot(r, r)
         end
-        integral += 2h*area*face_integral
+
+        # Two faces * h * area * mean(1/r²); the area factor is the Jacobian.
+        integral += 2h * area * face_integral
     end
-    4T(π)*integral/abs(det(voxel_basis))
+    4T(π) * integral / abs(det(voxel_basis))
 end
 
 # ∫cell d²p/|p| = ∮boundary (p⋅n)/|p| ds, for a centred parallelogram.
@@ -127,7 +135,7 @@ end
             # covers the rest if kernel is different from BareCoulomb().
 
             # Transforms volume integral ∫ 1/G^2 dV to surface integral Σ h * ∫ 1/G^2 dS
-            kernel_fourier[iG] = _coulomb_voxel_head(voxel_basis,nodes,weights)
+            kernel_fourier[iG] = _coulomb_voxel_head(voxel_basis, nodes, weights)
         end
 
         # === Use smooth 3D Gaussian Quadrature ===
