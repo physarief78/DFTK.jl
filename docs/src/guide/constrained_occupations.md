@@ -4,7 +4,7 @@
 chemical potentials determined by bisection. `n_eh` is electrons per cell, not
 a photon flux or a predicted steady-state density. A positive **indirect** gap
 must separate the two manifolds at every SCF step. The returned `scfres.εF`
-contains `μ_h`, `μ_e` and `n_valence`; `μ_h` and `μ_e` are also top-level fields.
+is a `QuasiFermiLevels` holding `μ_h`, `μ_e` and `n_valence`.
 
 ```julia
 light = self_consistent_field(basis;
