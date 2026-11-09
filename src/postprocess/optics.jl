@@ -81,7 +81,7 @@ function _optical_kmatrix(::AtomicNonlocal, term, basis, kpt, ψleft, ψright=ψ
                           kwargs...)
     groups = [g for g in basis.model.atom_groups
               if basis.model.atoms[first(g)] isa ElementPsp]
-    isempty(groups) && return zero(ψleft' * ψright)
+    isempty(groups) && return _zero_kmatrix(ψleft, ψright)
     psps = [basis.model.atoms[first(g)].psp for g in groups]
     positions = [basis.model.positions[g] for g in groups]
     P = build_projection_vectors(basis, kpt, psps, positions)
@@ -91,7 +91,7 @@ end
 
 function _optical_kmatrix(::Hubbard, term::TermHubbard, basis, kpt, ψleft, ψright=ψleft;
                           hubbard_n, kwargs...)
-    isempty(term.U) && return zero(ψleft' * ψright)
+    isempty(term.U) && return _zero_kmatrix(ψleft, ψright)
     isnothing(hubbard_n) && error("Hubbard velocities require hubbard_n.")
     # Löwdin orthogonalisation happens at the shifted k, so the derivative includes the
     # change of the full overlap matrix.
@@ -104,9 +104,12 @@ function _optical_kmatrix(::Hubbard, term::TermHubbard, basis, kpt, ψleft, ψri
                  _optical_mul(projectors',ψright))
 end
 
+# Local multiplication operators and constant energies have no explicit k dependence.
 function _optical_kmatrix(builder, term, basis, kpt, ψleft, ψright=ψleft; kwargs...)
-    # Local multiplication and constant energies have no explicit k dependence.
-    zero(ψleft' * ψright)
+    _zero_kmatrix(ψleft, ψright)
+end
+function _zero_kmatrix(ψleft, ψright)
+    zeros(promote_type(eltype(ψleft), eltype(ψright)), size(ψleft, 2), size(ψright, 2))
 end
 
 @doc raw"""
