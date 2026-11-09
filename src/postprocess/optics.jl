@@ -1,60 +1,5 @@
 # CPU reference implementation. All energies, frequencies and lengths are atomic units.
 
-_optical_dual_type(::Type) = nothing
-_optical_dual_type(::Type{Complex{T}}) where {T} = _optical_dual_type(T)
-_optical_dual_type(::Type{ForwardDiff.Dual{Tag,T,N}}) where {Tag,T<:Union{Float32,Float64},N} =
-    ForwardDiff.Dual{Tag,T,N}
-_optical_value(x::Real) = ForwardDiff.value(x)
-_optical_value(x::Complex) = complex(_optical_value(real(x)),_optical_value(imag(x)))
-_optical_partial(x::Real,j) = zero(x)
-_optical_partial(x::ForwardDiff.Dual,j) = ForwardDiff.partials(x,j)
-_optical_partial(x::Complex,j) = complex(_optical_partial(real(x),j),
-                                       _optical_partial(imag(x),j))
-
-function _optical_dual_matrix(value,partials,::Type{ForwardDiff.Dual{Tag,T,N}}) where {Tag,T,N}
-    D = ForwardDiff.Dual{Tag,T,N}
-    map(CartesianIndices(value)) do i
-        real_part = D(real(value[i]),ForwardDiff.Partials(ntuple(j -> real(partials[j][i]),N)))
-        eltype(value) <: Real && return real_part
-        imag_part = D(imag(value[i]),ForwardDiff.Partials(ntuple(j -> imag(partials[j][i]),N)))
-        complex(real_part,imag_part)
-    end
-end
-
-@doc raw"""
-CPU matrix multiplication for first-order Float32/Float64 dual matrices:
-```math
-C_0=A_0B_0,\qquad C_j=A_jB_0+A_0B_j.
-```
-This implements the ordinary forward-mode product rule using BLAS for its real
-or complex coefficient matrices. The enclosing Hamiltonian still uses ForwardDiff;
-no kinetic or projector derivative is supplied by hand. Nested duals and other
-number types retain generic Julia multiplication. This is local to optical
-projection, not a replacement of Base's matrix multiplication rules.
-"""
-function _optical_mul(A::AbstractMatrix,B::AbstractMatrix)
-    DA,DB = _optical_dual_type(eltype(A)),_optical_dual_type(eltype(B))
-    isnothing(DA) && isnothing(DB) && return A*B
-    !isnothing(DA) && !isnothing(DB) && DA != DB && return A*B
-    D = isnothing(DA) ? DB : DA
-    _optical_mul(A,B,D,DA,DB)
-end
-function _optical_mul(A,B,::Type{ForwardDiff.Dual{Tag,T,N}},DA,DB) where {Tag,T,N}
-    A0,B0 = _optical_value.(A),_optical_value.(B)
-    value = A0*B0
-    real(eltype(value)) == T || return A*B  # Keep ordinary promotion for mixed precision.
-    partials = ntuple(N) do j
-        if isnothing(DA)
-            A0*map(x -> _optical_partial(x,j),B)
-        elseif isnothing(DB)
-            map(x -> _optical_partial(x,j),A)*B0
-        else
-            map(x -> _optical_partial(x,j),A)*B0 + A0*map(x -> _optical_partial(x,j),B)
-        end
-    end
-    _optical_dual_matrix(value,partials,ForwardDiff.Dual{Tag,T,N})
-end
-
 function _check_optical_basis(basis)
     basis.architecture isa CPU || error("Reference optics requires a CPU basis.")
     basis.model.spin_polarization == :full && error(
@@ -71,10 +16,12 @@ function _shift_kpoint(basis, kpt, δk_cart)
            kpt.mapping_inv, kpt.mapping_device)
 end
 
+# ⟨ψleft|H_k|ψright⟩ restricted to the k-dependent part of each term. For a dual k the
+# matrix products run on BLAS through workarounds/forwarddiff_gemm.jl.
 function _optical_kmatrix(builder::Kinetic, term, basis, kpt, ψleft, ψright=ψleft;
                           kwargs...)
-    εkin = kinetic_energy(builder,basis.Ecut,Gplusk_vectors_cart(basis,kpt))
-    _optical_mul(ψleft',εkin .* ψright)
+    εkin = kinetic_energy(builder, basis.Ecut, Gplusk_vectors_cart(basis, kpt))
+    ψleft' * (εkin .* ψright)
 end
 
 function _optical_kmatrix(::AtomicNonlocal, term, basis, kpt, ψleft, ψright=ψleft;
@@ -86,7 +33,7 @@ function _optical_kmatrix(::AtomicNonlocal, term, basis, kpt, ψleft, ψright=ψ
     positions = [basis.model.positions[g] for g in groups]
     P = build_projection_vectors(basis, kpt, psps, positions)
     D = build_projection_coefficients(basis, psps, positions)
-    _optical_mul(_optical_mul(_optical_mul(ψleft',P),D),_optical_mul(P',ψright))
+    (ψleft' * P) * D * (P' * ψright)
 end
 
 function _optical_kmatrix(::Hubbard, term::TermHubbard, basis, kpt, ψleft, ψright=ψleft;
@@ -100,8 +47,7 @@ function _optical_kmatrix(::Hubbard, term::TermHubbard, basis, kpt, ψleft, ψri
     projectors = reduce(hcat, [only(extract_manifold(m, [P], labels).manifold_projectors)
                                for m in term.manifolds])
     D = hubbard_potential_coefficients(term, basis, hubbard_n)[kpt.spin]
-    _optical_mul(_optical_mul(_optical_mul(ψleft',projectors),D),
-                 _optical_mul(projectors',ψright))
+    (ψleft' * projectors) * D * (projectors' * ψright)
 end
 
 # Local multiplication operators and constant energies have no explicit k dependence.
