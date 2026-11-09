@@ -18,7 +18,7 @@ function save_jld2(to_dict_function!, file::AbstractString, scfres::NamedTuple;
 
             # Save some original datastructures (where JLD2 can easily preserve more)
             jld["model"] = scfres.basis.model  # Save original model datastructure
-            hasproperty(scfres,:fermialg) && (jld["fermialg_object"] = scfres.fermialg)
+            hasproperty(scfres, :fermialg) && (jld["fermialg_object"] = scfres.fermialg)
             delete!(jld, "kgrid")
             jld["kgrid"] = scfres.basis.kgrid  # Save original kgrid datastructure
         end
@@ -116,7 +116,7 @@ function load_scfres_jld2(jld, basis; skip_hamiltonian, strict, comm)
         for key in jld["scfres_extra_keys"]
             scfdict[get(propmap, Symbol(key), Symbol(key))] = jld[key]
         end
-        haskey(jld,"fermialg_object") && (scfdict[:fermialg] = jld["fermialg_object"])
+        haskey(jld, "fermialg_object") && (scfdict[:fermialg] = jld["fermialg_object"])
     else
         scfdict = nothing
     end
