@@ -13,7 +13,7 @@
     data = (; basis, ψ=[ψ], eigenvalues=[ε[order]],
              occupation=[zeros(length(ε))], ρ=guess_density(basis))
     velocity = compute_velocity(data)
-    masses = compute_effective_mass(data;band=1)
+    masses = compute_effective_mass(data; band=1)
     @test masses.inverse_mass ≈ I atol=1e-12
     @test masses.principal_masses ≈ ones(3)
     for α = 1:3
@@ -35,30 +35,30 @@ end
 @testitem "Optics: Γ-point projector origin limits" tags=[:optics] setup=[TestCases] begin
     using DFTK
     using LinearAlgebra
-    Si = ElementPsp(:Si,TestCases.pd_lda_family)
-    model = model_atomic(TestCases.silicon.lattice,[Si,Si],TestCases.silicon.positions;
+    Si = ElementPsp(:Si, TestCases.pd_lda_family)
+    model = model_atomic(TestCases.silicon.lattice, [Si, Si], TestCases.silicon.positions;
                           symmetries=false)
-    basis = PlaneWaveBasis(model;Ecut=5,kgrid=[1,1,1])
+    basis = PlaneWaveBasis(model; Ecut=5, kgrid=[1, 1, 1])
     ρ = guess_density(basis)
-    F = eigen(Hermitian(Matrix(Hamiltonian(basis;ρ)[1])))
-    data = (;basis,ρ,ψ=[F.vectors[:,1:10]],eigenvalues=[F.values[1:10]],
-             occupation=[vcat(fill(2.0,4),zeros(6))])
+    F = eigen(Hermitian(Matrix(Hamiltonian(basis; ρ)[1])))
+    data = (; basis, ρ, ψ=[F.vectors[:, 1:10]], eigenvalues=[F.values[1:10]],
+             occupation=[vcat(fill(2.0, 4), zeros(6))])
     velocity = compute_velocity(data)[1]
-    @test all(isfinite,velocity)
+    @test all(isfinite, velocity)
     kpt = only(basis.kpoints)
     for α = 1:3
         h = 1e-5
-        direction = Matrix{Float64}(I,3,3)[:,α]
+        direction = Matrix{Float64}(I, 3, 3)[:, α]
         function projected(δk)
-            shifted = PlaneWaveBasis(basis,ExplicitKpoints([
+            shifted = PlaneWaveBasis(basis, ExplicitKpoints([
                 basis.model.inv_recip_lattice*δk]))
             @test only(shifted.kpoints).G_vectors == kpt.G_vectors
-            data.ψ[1]'*Matrix(Hamiltonian(shifted;ρ)[1])*data.ψ[1]
+            data.ψ[1]'*Matrix(Hamiltonian(shifted; ρ)[1])*data.ψ[1]
         end
-        @test velocity[:,:,α] ≈ (projected(h*direction)-projected(-h*direction))/(2h) #=
+        @test velocity[:, :, α] ≈ (projected(h*direction)-projected(-h*direction))/(2h) #=
             =# atol=2e-8 rtol=1e-6
     end
-    @test_throws ErrorException compute_effective_mass(data;band=1)
+    @test_throws ErrorException compute_effective_mass(data; band=1)
 end
 
 @testitem "Optics: Hubbard projector k derivative" tags=[:optics] setup=[TestCases] begin
@@ -122,18 +122,18 @@ end
         @test real.(diag(velocity[:,:,α])) ≈ slope atol=2e-6 rtol=2e-5
         @test velocity[:,:,α] ≈ velocity[:,:,α]' atol=1e-12
     end
-    complete = merge(data,(;ψ=[F.vectors],eigenvalues=[F.values],
-                            occupation=[vcat(fill(2.0,4),zeros(length(F.values)-4))]))
-    masses = compute_effective_mass(complete;band=1)
+    complete = merge(data, (; ψ=[F.vectors], eigenvalues=[F.values],
+                            occupation=[vcat(fill(2.0, 4), zeros(length(F.values)-4))]))
+    masses = compute_effective_mass(complete; band=1)
     for α = 1:3
         h = 2e-4
-        δk = basis.model.inv_recip_lattice[:,α]*h
+        δk = basis.model.inv_recip_lattice[:, α]*h
         function ε1(k)
-            shifted = PlaneWaveBasis(basis,ExplicitKpoints([k]))
-            minimum(eigvals(Hermitian(Matrix(Hamiltonian(shifted;ρ)[1]))))
+            shifted = PlaneWaveBasis(basis, ExplicitKpoints([k]))
+            minimum(eigvals(Hermitian(Matrix(Hamiltonian(shifted; ρ)[1]))))
         end
         curvature = (ε1(k+δk)-2ε1(k)+ε1(k-δk))/h^2
-        @test masses.inverse_mass[α,α] ≈ curvature atol=5e-6 rtol=2e-4
+        @test masses.inverse_mass[α, α] ≈ curvature atol=5e-6 rtol=2e-4
     end
     # Independently differentiate all matrix elements at a fixed G set.
     ψ = data.ψ[1]

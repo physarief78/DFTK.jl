@@ -48,13 +48,6 @@ with explicit masks; it does not multiply marginal populations. With partial
 occupations it uses normalized population-weighted amplitudes of the static
 response model. `wannier_mott` is only an isotropic 3D hydrogenic estimate.
 
-The static response is checked against both complete-basis `compute_χ0` and
-finite-q Sternheimer/`DielectricAdjoint`. The optical head agrees with the IPA
-Kubo formula. BSE tests include the noninteracting limit, partial populations,
-finite-q reciprocal relabelling and Bloch-phase covariance. These internal
-checks do not substitute for converged Si, LiF, anatase, hBN and graphene
-literature benchmarks. No such material spectrum is declared validated here.
-
 Theory references: [Ismail-Beigi (slab truncation)](https://arxiv.org/abs/cond-mat/0603448),
 [exciting BSE tutorial](https://exciting-code.org/uploads/exciting/tutorial_notebooks/excited_states_from_bse.html),
 and [GPAW BSE theory](https://gpaw.readthedocs.io/documentation/bse/bse.html).
