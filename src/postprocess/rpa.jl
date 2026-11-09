@@ -24,8 +24,8 @@ end
 # Fourier coefficient of u_nk* u_m,k+q, with the reciprocal relabelling used by EXX.
 function _pair_density_fourier(basis,u,v,ΔG,indices)
     product = conj.(u).*v
-    iszero(ΔG) || (product .*= map(r -> cis2pi(dot(ΔG,r)),r_vectors(basis)))
-    sqrt(basis.model.unit_cell_volume) .* vec(fft(basis,product))[indices]
+    iszero(ΔG) || (product .*= map(r -> cis2pi(dot(ΔG, r)), r_vectors(basis)))
+    sqrt(basis.model.unit_cell_volume) .* vec(fft(basis, product))[indices]
 end
 
 function _scissored_eigenvalues(eigenvalues,scissor,n_valence)
@@ -88,16 +88,16 @@ and plasmons, or `compute_dielectric` for an explicit optical Drude term.
     optical_limit && isnothing(head) && error("The optical limit needs G=0.")
     for (ik,kpt) in enumerate(basis.kpoints)
         ikp,ΔG = find_equivalent_kpt(basis,kpt.coordinate+q,kpt.spin)
-        u = [ifft(basis,kpt,ψn) for ψn in eachcol(data.ψ[ik])]
+        u = [ifft(basis, kpt, ψn) for ψn in eachcol(data.ψ[ik])]
         up = ik == ikp ? u :
-             [ifft(basis,basis.kpoints[ikp],ψm) for ψm in eachcol(data.ψ[ikp])]
+             [ifft(basis, basis.kpoints[ikp], ψm) for ψm in eachcol(data.ψ[ikp])]
         for n in eachindex(ε[ik]),m in eachindex(ε[ikp])
             Δ = ε[ik][n]-ε[ikp][m]
             δf = f[ik][n]-f[ikp][m]
             degenerate_static = abs(Δ) ≤ degeneracy_tol && abs(δf) ≤ degeneracy_tol &&
                                 !isnothing(occupation_derivative)
             iszero(δf) && !degenerate_static && continue
-            ρnm = _pair_density_fourier(basis,u[n],up[m],ΔG,indices)
+            ρnm = _pair_density_fourier(basis, u[n], up[m], ΔG, indices)
             if optical_limit
                 ρnm[head] = if abs(Δ) ≤ degeneracy_tol
                     zero(eltype(ρnm))
@@ -168,7 +168,7 @@ EELS with microscopic local fields: ``L(q,ω)=-\Im ε^{-1}_{00}(q,ω)``.
 `response` is the output of `compute_rpa`; q=0 optical limits are interband only.
 """
 function compute_eels(response::NamedTuple)
-    get(response,:screening_voxel,false) && throw(ArgumentError(
+    get(response, :screening_voxel, false) && throw(ArgumentError(
         "A screened cell average is not a pointwise EELS response."))
     head = findfirst(iszero,response.Gs)
     isnothing(head) && error("EELS requires the response head G=0.")
