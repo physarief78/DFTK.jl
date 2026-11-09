@@ -287,8 +287,7 @@ Overview of parameters:
                 info.n_bands_converge, info.n_iter, info.n_matvec, ψ, info.diagonalization,
                 stage=:finalize, info.history_Δρ, info.history_Δτ, info.history_Etot,
                 info.timedout, is_converged, nbandsalg, fermialg, diagtolalg, solver,
-                eigensolver, mixing, seed, runtime_ns=time_ns() - start_ns, algorithm="SCF",
-                _occupation_metadata(εF)...)
+                eigensolver, mixing, seed, runtime_ns=time_ns() - start_ns, algorithm="SCF")
     callback(scfres)
     scfres
 end

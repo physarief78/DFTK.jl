@@ -49,7 +49,7 @@ All kwargs not specified below are passed to [`diagonalize_all_kblocks`](@ref):
 
     occupation=nothing
     if !isnothing(fermialg)
-        (;occupation,εF) = compute_occupation(bs_basis,eigres.λ,fermialg)
+        (; occupation, εF) = compute_occupation(bs_basis, eigres.λ, fermialg)
     elseif !isnothing(εF)
         (; occupation) = compute_occupation(bs_basis, eigres.λ, εF)
     end
@@ -61,7 +61,7 @@ All kwargs not specified below are passed to [`diagonalize_all_kblocks`](@ref):
     #      types subtype. In a first version the ScfResult could just contain
     #      the currently used named tuple and forward all operations to it.
     (; basis=bs_basis, ψ=eigres.X, eigenvalues=eigres.λ, ρ, τ, hubbard_n, εF, occupation,
-     diagonalization=[eigres], seed, _occupation_metadata(εF)...)
+     diagonalization=[eigres], seed)
 end
 
 """
@@ -74,7 +74,7 @@ function compute_bands(scfres::NamedTuple,
                        n_bands=default_n_bands_bandstructure(scfres), kwargs...)
     τ = haskey(scfres, :τ) ? scfres.τ : nothing
     hubbard_n = haskey(scfres, :hubbard_n) ? scfres.hubbard_n : nothing
-    fermialg = get(scfres,:fermialg,nothing)
+    fermialg = get(scfres, :fermialg, nothing)
     fermialg isa FixedOccupations && error(
         "Fixed ΔSCF band occupations cannot be transferred to another band mesh.")
     fermialg = fermialg isa QuasiFermi ? fermialg : nothing
