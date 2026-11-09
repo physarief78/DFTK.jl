@@ -93,10 +93,12 @@ function _optical_kmatrix(::Hubbard, term::TermHubbard, basis, kpt, ψleft, ψri
                           hubbard_n, kwargs...)
     isempty(term.U) && return zero(ψleft' * ψright)
     isnothing(hubbard_n) && error("Hubbard velocities require hubbard_n.")
+    # Löwdin orthogonalisation happens at the shifted k, so the derivative includes the
+    # change of the full overlap matrix.
     (; orbitals, labels) = _atomic_orbitals_nonorthogonal(basis; kpoints=[kpt])
     P = ortho_lowdin(only(orbitals))
     projectors = reduce(hcat, [only(extract_manifold(m, [P], labels).manifold_projectors)
-                              for m in term.manifolds])
+                               for m in term.manifolds])
     D = hubbard_potential_coefficients(term, basis, hubbard_n)[kpt.spin]
     _optical_mul(_optical_mul(_optical_mul(ψleft',projectors),D),
                  _optical_mul(projectors',ψright))
@@ -126,17 +128,18 @@ Empty bands must be converged separately, e.g. with `compute_bands` on a full k 
     hubbard_n = get(data, :hubbard_n, nothing)
     for (builder, term) in zip(basis.model.term_types, basis.terms)
         isnothing(term) && continue
-        builder isa Union{Kinetic,AtomicNonlocal,Hubbard} && continue
+        builder isa Union{Kinetic, AtomicNonlocal, Hubbard} && continue
         term isa TermExactExchange && error("Exact-exchange velocities are not supported.")
+        # Any other term must act as a local potential, which has no k dependence.
         ops = ene_ops(term, basis, data.ψ, data.occupation;
                       ρ=data.ρ, τ=get(data, :τ, nothing), hubbard_n,
                       eigenvalues=data.eigenvalues, εF=get(data, :εF, nothing)).ops
-        all(op -> op isa Union{NoopOperator,RealSpaceMultiplication}, ops) || error(
+        all(op -> op isa Union{NoopOperator, RealSpaceMultiplication}, ops) || error(
             "Optical k derivative is not implemented for $(typeof(builder)).")
     end
     map(enumerate(basis.kpoints)) do (ik, kpt)
         ψk = data.ψ[ik]
-        function H(δk)
+        function Hk(δk)
             shifted = _shift_kpoint(basis, kpt, δk)
             sum(zip(basis.model.term_types, basis.terms)) do (builder, term)
                 _optical_kmatrix(builder, term, basis, shifted, ψk; hubbard_n)
@@ -144,7 +147,7 @@ Empty bands must be converged separately, e.g. with `compute_bands` on a full k 
         end
         # Splitting real and imaginary parts keeps ForwardDiff's output real-valued.
         J = ForwardDiff.jacobian(zeros(eltype(basis), 3)) do δk
-            h = H(δk)
+            h = Hk(δk)
             vcat(vec(real.(h)), vec(imag.(h)))
         end
         n = size(ψk, 2)
@@ -210,20 +213,19 @@ For a slab, this is the supercell dielectric tensor and depends on the vacuum he
                                     degeneracy_tol=1e-9)
     _check_optical_basis(basis)
     η > 0 || throw(ArgumentError("η must be positive."))
-    all(isfinite, ω) && all(ω .≥ 0) || throw(ArgumentError("ω must be finite and nonnegative."))
+    all(isfinite, ω) && all(ω .≥ 0) ||
+        throw(ArgumentError("ω must be finite and nonnegative."))
     iszero(scissor) || !isnothing(n_valence) ||
         throw(ArgumentError("A scissor shift requires n_valence."))
     length(eigenvalues) == length(occupation) == length(velocity) ==
         length(basis.kpoints) || throw(DimensionMismatch("Inconsistent k-point arrays."))
     T = promote_type(eltype(basis), eltype(ω), typeof(η), typeof(scissor))
-    ε = zeros(Complex{T}, 3, 3, length(ω))
-    for α = 1:3
-        ε[α,α,:] .= 1
-    end
-    χ = zero(ε)
+    shift(n) = !isnothing(n_valence) && n > n_valence ? scissor : zero(scissor)
+
+    χ = zeros(Complex{T}, 3, 3, length(ω))
     for ik in eachindex(eigenvalues)
         εk, fk, vk = eigenvalues[ik], occupation[ik], velocity[ik]
-        length(εk) == length(fk) == size(vk,1) == size(vk,2) ||
+        length(εk) == length(fk) == size(vk, 1) == size(vk, 2) ||
             throw(DimensionMismatch("Inconsistent band arrays."))
         isnothing(n_valence) || 0 < n_valence < length(εk) ||
             throw(ArgumentError("n_valence must leave both valence and conduction bands."))
@@ -244,25 +246,29 @@ For a slab, this is the supercell dielectric tensor and depends on the vacuum he
             end
             abs(Δ) > degeneracy_tol || throw(ArgumentError(
                 "Unequal occupations in a degenerate subspace at k point $ik."))
-            shift(n) = !isnothing(n_valence) && n > n_valence ? scissor : zero(scissor)
             ΔQP = Δ + shift(n) - shift(m)
-            ΔQP * Δ > 0 || throw(ArgumentError("The scissor closes or reverses a transition."))
+            ΔQP * Δ > 0 ||
+                throw(ArgumentError("The scissor closes or reverses a transition."))
             scale = ΔQP / Δ
             for α = 1:3, β = 1:3, iω in eachindex(ω)
-                χ[α,β,iω] += (basis.kweights[ik] * δf * scale^2
-                              * vk[n,m,α] * vk[m,n,β]
-                              / (ΔQP^2 * (ω[iω] + ΔQP + im*η)))
+                χ[α, β, iω] += (basis.kweights[ik] * δf * scale^2
+                                * vk[n, m, α] * vk[m, n, β]
+                                / (ΔQP^2 * (ω[iω] + ΔQP + im*η)))
             end
         end
     end
-    ε .-= 4T(π) / basis.model.unit_cell_volume .* mpi_sum(χ, basis.comm_kpts)
+    χ = mpi_sum(χ, basis.comm_kpts)
+    ε = zeros(Complex{T}, 3, 3, length(ω))
+    for iω in eachindex(ω)
+        ε[:, :, iω] = I - 4T(π) / basis.model.unit_cell_volume * χ[:, :, iω]
+    end
     if !isnothing(occupation_derivative)
         ωp2 = compute_drude_weight(basis, velocity, occupation_derivative;
                                     eigenvalues,degeneracy_tol)
         if any(!iszero, ωp2)
             any(iszero, ω) && throw(ArgumentError("The Drude term is singular at ω=0."))
             for iω in eachindex(ω)
-                ε[:,:,iω] .-= ωp2 / (ω[iω] * (ω[iω] + im*η))
+                ε[:, :, iω] .-= ωp2 / (ω[iω] * (ω[iω] + im*η))
             end
         end
     end
@@ -287,7 +293,10 @@ Absorption coefficient (inverse Bohr): ``α(ω)=2ωκ(ω)/c`` in atomic units.
 Apply to a scalar polarization or principal dielectric component, not elementwise to
 a general anisotropic tensor. Negative absorption represents gain.
 """
-absorption_coefficient(ω::Real, ε::Number) = 2ω * refractive_index(ε).κ / 137.035999084
+function absorption_coefficient(ω::Real, ε::Number)
+    c = 137.035999084  # speed of light in atomic units
+    2ω * refractive_index(ε).κ / c
+end
 
 """Scalar energy loss function `-Im(1/ε)`. For local fields use `compute_eels`."""
 loss_function(ε::Number) = -imag(inv(ε))
@@ -303,9 +312,9 @@ This numerical fit alone does not establish which transition mechanism is presen
 function fit_tauc(ω, α; window, exponent)
     length(ω) == length(α) || throw(DimensionMismatch("ω and α must have equal lengths."))
     exponent > 0 || throw(ArgumentError("The Tauc exponent must be positive."))
-    indices = findall(i -> window[1] ≤ ω[i] ≤ window[2] && α[i] > 0,
-                      eachindex(ω))
-    length(indices) ≥ 3 || throw(ArgumentError("The Tauc window needs at least three points."))
+    indices = findall(i -> window[1] ≤ ω[i] ≤ window[2] && α[i] > 0, eachindex(ω))
+    length(indices) ≥ 3 ||
+        throw(ArgumentError("The Tauc window needs at least three points."))
     x = ω[indices]
     y = (α[indices] .* x).^exponent
     slope, intercept = hcat(x, ones(eltype(x), length(x))) \ y
