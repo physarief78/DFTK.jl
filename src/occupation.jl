@@ -39,10 +39,11 @@ pairs and need not equal the single-Fermi-level ensemble exactly.
 struct QuasiFermi{T <: Real} <: AbstractConstrainedOccupations
     n_valence::Int
     n_eh::T
-    function QuasiFermi(n_valence::Integer,n_eh::T) where {T <: Real}
+    function QuasiFermi(n_valence::Integer, n_eh::T) where {T <: Real}
         n_valence > 0 || throw(ArgumentError("n_valence must be positive."))
-        isfinite(n_eh) && n_eh ≥ 0 || throw(ArgumentError("n_eh must be finite and nonnegative."))
-        new{T}(n_valence,n_eh)
+        isfinite(n_eh) && n_eh ≥ 0 ||
+            throw(ArgumentError("n_eh must be finite and nonnegative."))
+        new{T}(n_valence, n_eh)
     end
 end
 
@@ -51,10 +52,8 @@ struct QuasiFermiLevels{T <: Real} <: AbstractOccupationState
     μ_e::T
     n_valence::Int
 end
-_band_fermi_level(εF::Real,n) = εF
-_band_fermi_level(εF::QuasiFermiLevels,n) = n ≤ εF.n_valence ? εF.μ_h : εF.μ_e
-_occupation_metadata(εF) = (;)
-_occupation_metadata(εF::QuasiFermiLevels) = (;εF.μ_h,εF.μ_e)
+_band_fermi_level(εF::Real, n) = εF
+_band_fermi_level(εF::QuasiFermiLevels, n) = n ≤ εF.n_valence ? εF.μ_h : εF.μ_e
 
 """
 Explicit occupation vectors for ΔSCF, including DFTK's spin degeneracy. The band
@@ -68,92 +67,99 @@ FixedOccupations(occupation::AbstractVector{<:AbstractVector}) =
     FixedOccupations([collect(f) for f in occupation])
 struct FixedOccupationState <: AbstractOccupationState end
 
-function _occupation_entropy(smearing,ε,::FixedOccupationState,n,f,temperature)
+function _occupation_entropy(smearing, ε, ::FixedOccupationState, n, f, temperature)
     smearing isa Smearing.FermiDirac || error(
         "Finite-temperature fixed occupations currently require Fermi–Dirac smearing.")
     iszero(f) || isone(f) ? zero(f) : -f*log(f)-(1-f)*log1p(-f)
 end
 
-function _check_occupation_response(εF,operation="Equilibrium response")
+function _check_occupation_response(εF, operation="Equilibrium response")
     εF isa AbstractOccupationState && error(
         "$operation is not implemented for constrained occupations.")
     nothing
 end
 
-function _manifold_fermi_level(basis::AbstractBasis{T},eigenvalues,target;
-                                temperature,smearing,tol_n_elec) where {T}
-    capacity = filled_occupation(basis.model)*weighted_ksum(basis,length.(eigenvalues))
+function _manifold_fermi_level(basis::AbstractBasis{T}, eigenvalues, target;
+                                temperature, smearing, tol_n_elec) where {T}
+    capacity = filled_occupation(basis.model)*weighted_ksum(basis, length.(eigenvalues))
     iszero(target) && return -T(Inf)
     target == capacity && return T(Inf)
-    temperature > 0 || error("Fractional electron–hole populations require temperature > 0.")
+    temperature > 0 ||
+        error("Fractional electron–hole populations require temperature > 0.")
     population(μ) = filled_occupation(basis.model)*weighted_ksum(basis,
-        [sum(Smearing.occupation.(smearing,(εk.-μ)./temperature)) for εk in eigenvalues])
-    lower = mpi_min(minimum(minimum,eigenvalues),basis.comm_kpts)-1-40temperature
-    upper = mpi_max(maximum(maximum,eigenvalues),basis.comm_kpts)+1+40temperature
-    μ = Roots.find_zero(μ -> population(μ)-target,(lower,upper),Roots.Bisection();atol=eps(T))
-    abs(population(μ)-target) ≤ tol_n_elec || error("Quasi-Fermi electron count did not converge.")
+        [sum(Smearing.occupation.(smearing, (εk.-μ)./temperature)) for εk in eigenvalues])
+    lower = mpi_min(minimum(minimum, eigenvalues), basis.comm_kpts)-1-40temperature
+    upper = mpi_max(maximum(maximum, eigenvalues), basis.comm_kpts)+1+40temperature
+    μ = Roots.find_zero(μ -> population(μ)-target, (lower, upper), Roots.Bisection();
+                        atol=eps(T))
+    abs(population(μ)-target) ≤ tol_n_elec ||
+        error("Quasi-Fermi electron count did not converge.")
     μ
 end
 
-function compute_occupation(basis::AbstractBasis{T},eigenvalues::AbstractVector,
+function compute_occupation(basis::AbstractBasis{T}, eigenvalues::AbstractVector,
                             algorithm::QuasiFermi;
                             tol_n_elec=default_occupation_threshold(T),
                             temperature=basis.model.temperature,
                             smearing=basis.model.smearing) where {T}
     isnothing(basis.model.εF) || error("QuasiFermi cannot be used with a fixed model εF.")
-    basis.model.spin_polarization == :full && error("QuasiFermi does not yet support spinors.")
+    basis.model.spin_polarization == :full &&
+        error("QuasiFermi does not yet support spinors.")
     smearing isa Union{Smearing.None,Smearing.FermiDirac,Smearing.Gaussian} ||
         error("QuasiFermi needs monotone smearing.")
     Nv = algorithm.n_valence
-    all(ε -> length(ε) > Nv && issorted(ε),eigenvalues) ||
+    all(ε -> length(ε) > Nv && issorted(ε), eigenvalues) ||
         error("QuasiFermi needs sorted eigenvalues and at least one conduction band.")
-    gap = mpi_min(minimum(ε -> ε[Nv+1],eigenvalues),basis.comm_kpts) -
-          mpi_max(maximum(ε -> ε[Nv],eigenvalues),basis.comm_kpts)
-    gap > 0 || error("QuasiFermi requires a positive indirect gap; use L2 for gapless models.")
+    gap = mpi_min(minimum(ε -> ε[Nv+1], eigenvalues), basis.comm_kpts) -
+          mpi_max(maximum(ε -> ε[Nv], eigenvalues), basis.comm_kpts)
+    gap > 0 ||
+        error("QuasiFermi requires a positive indirect gap; use L2 for gapless models.")
     valence = [ε[1:Nv] for ε in eigenvalues]
     conduction = [ε[Nv+1:end] for ε in eigenvalues]
-    capacity = filled_occupation(basis.model)*weighted_ksum(basis,length.(valence))
+    capacity = filled_occupation(basis.model)*weighted_ksum(basis, length.(valence))
     abs(basis.model.n_electrons-capacity) ≤ tol_n_elec ||
         error("The valence manifold must contain the neutral ground-state electron count.")
-    conduction_capacity = filled_occupation(basis.model)*weighted_ksum(basis,length.(conduction))
-    algorithm.n_eh ≤ min(capacity,conduction_capacity) || error("Too many pairs; increase n_bands.")
-    μ_h = _manifold_fermi_level(basis,valence,capacity-algorithm.n_eh;
-                                temperature,smearing,tol_n_elec)
-    μ_e = _manifold_fermi_level(basis,conduction,algorithm.n_eh;
-                                temperature,smearing,tol_n_elec)
-    levels = QuasiFermiLevels(μ_h,μ_e,Nv)
-    compute_occupation(basis,eigenvalues,levels;temperature,smearing)
+    conduction_capacity = (filled_occupation(basis.model)
+                           * weighted_ksum(basis, length.(conduction)))
+    algorithm.n_eh ≤ min(capacity, conduction_capacity) ||
+        error("Too many pairs; increase n_bands.")
+    μ_h = _manifold_fermi_level(basis, valence, capacity-algorithm.n_eh;
+                                temperature, smearing, tol_n_elec)
+    μ_e = _manifold_fermi_level(basis, conduction, algorithm.n_eh;
+                                temperature, smearing, tol_n_elec)
+    levels = QuasiFermiLevels(μ_h, μ_e, Nv)
+    compute_occupation(basis, eigenvalues, levels; temperature, smearing)
 end
 
-function compute_occupation(basis::AbstractBasis{T},eigenvalues::AbstractVector,
+function compute_occupation(basis::AbstractBasis{T}, eigenvalues::AbstractVector,
                             εF::QuasiFermiLevels;
                             temperature=basis.model.temperature,
                             smearing=basis.model.smearing) where {T}
     occupation = map(eigenvalues) do εk
         map(eachindex(εk)) do n
-            μ = _band_fermi_level(εF,n)
-            x = iszero(temperature) ? copysign(T(Inf),εk[n]-μ) : (εk[n]-μ)/temperature
-            filled_occupation(basis.model)*Smearing.occupation(smearing,x)
+            μ = _band_fermi_level(εF, n)
+            x = iszero(temperature) ? copysign(T(Inf), εk[n]-μ) : (εk[n]-μ)/temperature
+            filled_occupation(basis.model)*Smearing.occupation(smearing, x)
         end
     end
-    (;occupation,εF)
+    (; occupation, εF)
 end
 
-function compute_occupation(basis::AbstractBasis{T},eigenvalues::AbstractVector,
+function compute_occupation(basis::AbstractBasis{T}, eigenvalues::AbstractVector,
                             algorithm::FixedOccupations;
-                            tol_n_elec=default_occupation_threshold(T),kwargs...) where {T}
+                            tol_n_elec=default_occupation_threshold(T), kwargs...) where {T}
     isnothing(basis.model.εF) || error("FixedOccupations cannot use a fixed model εF.")
     occupation = algorithm.occupation
     length(occupation) == length(eigenvalues) == length(basis.kpoints) ||
         throw(DimensionMismatch("Fixed occupations need one vector per local k point."))
     length.(occupation) == length.(eigenvalues) ||
-        throw(DimensionMismatch("Fixed occupation and computed band counts must match exactly."))
+        throw(DimensionMismatch("Fixed occupation and computed band counts must match."))
     full = filled_occupation(basis.model)
-    all(f -> all(x -> isfinite(x) && 0 ≤ x ≤ full,f),occupation) ||
+    all(f -> all(x -> isfinite(x) && 0 ≤ x ≤ full, f), occupation) ||
         throw(ArgumentError("Fixed occupations must lie between zero and $full."))
-    abs(weighted_ksum(basis,sum.(occupation))-basis.model.n_electrons) ≤ tol_n_elec ||
+    abs(weighted_ksum(basis, sum.(occupation))-basis.model.n_electrons) ≤ tol_n_elec ||
         throw(ArgumentError("Fixed occupations do not sum to model.n_electrons."))
-    (;occupation=deepcopy(occupation),εF=FixedOccupationState())
+    (; occupation=deepcopy(occupation), εF=FixedOccupationState())
 end
 
 @doc raw"""
@@ -161,7 +167,7 @@ Occupation energy derivatives ``∂f_{nk}/∂ε_{nk}`` at fixed scalar or quasi-
 levels. Use for the Drude tensor. Fixed occupation vectors instead have derivative
 zero by definition and do not specify a thermalized Fermi surface.
 """
-function compute_occupation_derivative(basis,eigenvalues,εF;
+function compute_occupation_derivative(basis, eigenvalues, εF;
                                        temperature=basis.model.temperature,
                                        smearing=basis.model.smearing)
     if εF isa FixedOccupationState
@@ -169,7 +175,7 @@ function compute_occupation_derivative(basis,eigenvalues,εF;
     end
     temperature > 0 || error("Fermi-surface derivatives require positive temperature.")
     [[filled_occupation(basis.model)/temperature * Smearing.occupation_derivative(
-        smearing,(εk[n]-_band_fermi_level(εF,n))/temperature) for n in eachindex(εk)]
+        smearing, (εk[n]-_band_fermi_level(εF, n))/temperature) for n in eachindex(εk)]
      for εk in eigenvalues]
 end
 
