@@ -66,24 +66,24 @@ struct SlabTruncatedCoulomb{T} <: InteractionKernel
     R::T
     normal::Vec3{T}
 end
-function SlabTruncatedCoulomb(R;normal=[0,0,1])
+function SlabTruncatedCoulomb(R; normal=[0, 0, 1])
     R = float(austrip(R))
     R > 0 || throw(ArgumentError("The slab cutoff must be positive."))
     norm(normal) > 0 || throw(ArgumentError("The slab normal must be nonzero."))
-    T = promote_type(typeof(R),eltype(normal))
-    SlabTruncatedCoulomb(T(R),Vec3{T}(normal/norm(normal)))
+    T = promote_type(typeof(R), eltype(normal))
+    SlabTruncatedCoulomb(T(R), Vec3{T}(normal/norm(normal)))
 end
-function SlabTruncatedCoulomb(basis::PlaneWaveBasis;direction=3)
-    normal = basis.model.inv_lattice[direction,:]
-    SlabTruncatedCoulomb(inv(2norm(normal));normal)
+function SlabTruncatedCoulomb(basis::PlaneWaveBasis; direction=3)
+    normal = basis.model.inv_lattice[direction, :]
+    SlabTruncatedCoulomb(inv(2norm(normal)); normal)
 end
-function eval_kernel_fourier(kernel::SlabTruncatedCoulomb,p::AbstractVector{T}) where {T}
+function eval_kernel_fourier(kernel::SlabTruncatedCoulomb, p::AbstractVector{T}) where {T}
     p2 = norm2(p)
     iszero(p2) && return T(Inf)
-    perpendicular = dot(p,kernel.normal)
+    perpendicular = dot(p, kernel.normal)
     parallel = norm(p-perpendicular*kernel.normal)
     x = perpendicular*kernel.R
-    if parallel < eps(T)*max(one(T),sqrt(p2))
+    if parallel < eps(T)*max(one(T), sqrt(p2))
         abs(sin(x)) < sqrt(eps(T)) || error(
             "p∥=0 requires reciprocal-grid modes with R equal to half the slab height.")
         return 4T(π)/p2 * (1-cos(x))
