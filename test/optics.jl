@@ -35,31 +35,31 @@ end
 @testitem "Optics: degenerate Drude subspace covariance" tags=[:optics] begin
     using DFTK
     using LinearAlgebra
-    model = Model(5.0Matrix(I,3,3);n_electrons=2,terms=[Kinetic()],symmetries=false)
-    basis = PlaneWaveBasis(model;Ecut=1,kgrid=[1,1,1])
-    v = zeros(ComplexF64,2,2,3)
-    v[:,:,1] = [0 1;1 0]
-    v[:,:,2] = [1 0;0 -1]
-    derivative = [[-0.5,-0.5]]
-    ε = [[0.0,0.0]]
-    f = [[1.0,1.0]]
-    D = compute_drude_weight(basis,[v],derivative;eigenvalues=ε)
-    @test D ≈ 4π/model.unit_cell_volume*diagm([1.0,1.0,0.0])
-    U = [1 im;im 1]/sqrt(2)
-    rotated = cat([U'*v[:,:,α]*U for α = 1:3]...;dims=3)
-    @test compute_drude_weight(basis,[rotated],derivative;eigenvalues=ε) ≈ D
-    ω = [0.1,0.2]
-    original = compute_dielectric(basis,ε,f,[v],ω;η=0.01,occupation_derivative=derivative)
-    changed = compute_dielectric(basis,ε,f,[rotated],ω;η=0.01,occupation_derivative=derivative)
+    model = Model(5.0Matrix(I, 3, 3); n_electrons=2, terms=[Kinetic()], symmetries=false)
+    basis = PlaneWaveBasis(model; Ecut=1, kgrid=[1, 1, 1])
+    v = zeros(ComplexF64, 2, 2, 3)
+    v[:, :, 1] = [0 1; 1 0]
+    v[:, :, 2] = [1 0; 0 -1]
+    derivative = [[-0.5, -0.5]]
+    ε = [[0.0, 0.0]]
+    f = [[1.0, 1.0]]
+    D = compute_drude_weight(basis, [v], derivative; eigenvalues=ε)
+    @test D ≈ 4π/model.unit_cell_volume*diagm([1.0, 1.0, 0.0])
+    U = [1 im; im 1]/sqrt(2)
+    rotated = cat([U'*v[:, :, α]*U for α = 1:3]...; dims=3)
+    @test compute_drude_weight(basis, [rotated], derivative; eigenvalues=ε) ≈ D
+    ω = [0.1, 0.2]
+    original = compute_dielectric(basis, ε, f, [v], ω; η=0.01, occupation_derivative=derivative)
+    changed = compute_dielectric(basis, ε, f, [rotated], ω; η=0.01, occupation_derivative=derivative)
     @test changed.ε ≈ original.ε
     δ = 1e-10
-    εnear = [[0.0,δ]]
-    fnear = [[1.0,2Smearing.occupation(Smearing.FermiDirac(),δ)]]
-    near = compute_dielectric(basis,εnear,fnear,[v],ω;
-                               η=0.01,occupation_derivative=derivative)
+    εnear = [[0.0, δ]]
+    fnear = [[1.0, 2Smearing.occupation(Smearing.FermiDirac(), δ)]]
+    near = compute_dielectric(basis, εnear, fnear, [v], ω;
+                               η=0.01, occupation_derivative=derivative)
     @test near.ε ≈ original.ε
-    @test_throws ArgumentError compute_dielectric(basis,ε,[[2.0,0.0]],[v],ω;
-        η=0.01,occupation_derivative=derivative)
+    @test_throws ArgumentError compute_dielectric(basis, ε, [[2.0, 0.0]], [v], ω;
+        η=0.01, occupation_derivative=derivative)
 end
 
 @testitem "Optics: Γ-point projector origin limits" tags=[:optics] setup=[TestCases] begin
