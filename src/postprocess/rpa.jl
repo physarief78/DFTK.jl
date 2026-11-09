@@ -163,10 +163,10 @@ must not be used as a finite-q BSE interaction.
 end
 
 function compute_rpa(data::NamedTuple, q, ω;
-                     kernel=ReplaceSingularity(BareCoulomb(),0),
-                     max_matrix_bytes=512*1024^2,kwargs...)
-    response = compute_χ0_dynamic(data,q,ω;max_matrix_bytes,kwargs...)
-    compute_rpa(response;kernel,max_matrix_bytes)
+                     kernel=ReplaceSingularity(BareCoulomb(), 0),
+                     max_matrix_bytes=512*1024^2, kwargs...)
+    response = compute_χ0_dynamic(data, q, ω; max_matrix_bytes, kwargs...)
+    compute_rpa(response; kernel, max_matrix_bytes)
 end
 
 @doc raw"""

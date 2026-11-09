@@ -87,7 +87,7 @@ function compute_forces(term::TermSheetCounterCharge, basis::PlaneWaveBasis, ψ,
     end
 end
 _electrostatic_potential(term::TermSheetCounterCharge, basis, ρ) = term.potential_values
-compute_dynmat(::TermSheetCounterCharge,::AbstractBasis,ψ,occupation;kwargs...) = error(
+compute_dynmat(::TermSheetCounterCharge, ::AbstractBasis, ψ, occupation; kwargs...) = error(
     "DFPT ionic derivatives of SheetCounterCharge are not implemented; " *
     "use finite differences of the supported forces.")
 function _countercharge_dipole(t::SheetCounterCharge, basis, direction, cut, height)

@@ -171,22 +171,22 @@ With `eigenvalues`, degenerate subspaces use the invariant trace
 `sum_nm (-f') v_nm^α v_mn^β`, including off-diagonal velocity matrix elements.
 """
 function compute_drude_weight(basis, velocity, occupation_derivative;
-                               eigenvalues=nothing,degeneracy_tol=1e-9)
+                              eigenvalues=nothing, degeneracy_tol=1e-9)
     _check_optical_basis(basis)
     length(velocity) == length(occupation_derivative) == length(basis.kpoints) ||
         throw(DimensionMismatch("One velocity and derivative array is required per k point."))
     T = real(eltype(first(velocity)))
     ωp2 = zeros(T, 3, 3)
-    for ik in eachindex(velocity),n in eachindex(occupation_derivative[ik])
+    for ik in eachindex(velocity), n in eachindex(occupation_derivative[ik])
         for m in eachindex(occupation_derivative[ik])
             if n != m
                 isnothing(eigenvalues) && continue
-                abs(eigenvalues[ik][n]-eigenvalues[ik][m]) ≤ degeneracy_tol || continue
+                abs(eigenvalues[ik][n] - eigenvalues[ik][m]) ≤ degeneracy_tol || continue
             end
-            derivative = (occupation_derivative[ik][n]+occupation_derivative[ik][m])/2
-            for α = 1:3,β = 1:3
+            derivative = (occupation_derivative[ik][n] + occupation_derivative[ik][m]) / 2
+            for α = 1:3, β = 1:3
                 ωp2[α, β] -= (basis.kweights[ik] * derivative
-                              * real(velocity[ik][n,m,α] * velocity[ik][m,n,β]))
+                              * real(velocity[ik][n, m, α] * velocity[ik][m, n, β]))
             end
         end
     end
@@ -238,17 +238,19 @@ For a slab, this is the supercell dielectric tensor and depends on the vacuum he
             iszero(δf) && continue
             Δ = εk[n] - εk[m]
             if abs(Δ) ≤ degeneracy_tol
+                # A degenerate pair contributes only through the Drude subspace trace,
+                # which requires its population difference to be thermal.
                 consistent = abs(δf) ≤ sqrt(eps(T))
                 if !isnothing(occupation_derivative)
-                    derivative = (occupation_derivative[ik][n]+occupation_derivative[ik][m])/2
-                    consistent = abs(δf-derivative*Δ) ≤ 100eps(T)*max(1,abs(fk[n]),abs(fk[m]))
+                    derivative = (occupation_derivative[ik][n]
+                                  + occupation_derivative[ik][m]) / 2
+                    consistent = (abs(δf - derivative*Δ)
+                                  ≤ 100eps(T) * max(1, abs(fk[n]), abs(fk[m])))
                 end
                 consistent || throw(ArgumentError(
                     "Unequal occupations in a degenerate subspace at k point $ik."))
-                continue  # Included in the invariant Drude subspace trace below.
+                continue
             end
-            abs(Δ) > degeneracy_tol || throw(ArgumentError(
-                "Unequal occupations in a degenerate subspace at k point $ik."))
             ΔQP = Δ + shift(n) - shift(m)
             ΔQP * Δ > 0 ||
                 throw(ArgumentError("The scissor closes or reverses a transition."))
@@ -267,7 +269,7 @@ For a slab, this is the supercell dielectric tensor and depends on the vacuum he
     end
     if !isnothing(occupation_derivative)
         ωp2 = compute_drude_weight(basis, velocity, occupation_derivative;
-                                    eigenvalues,degeneracy_tol)
+                                   eigenvalues, degeneracy_tol)
         if any(!iszero, ωp2)
             any(iszero, ω) && throw(ArgumentError("The Drude term is singular at ω=0."))
             for iω in eachindex(ω)
